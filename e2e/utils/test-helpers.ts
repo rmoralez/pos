@@ -251,14 +251,14 @@ export class Assertions {
    * Assert product in list
    */
   async assertProductInList(productName: string) {
-    await expect(this.page.getByRole('row').filter({ hasText: productName })).toBeVisible();
+    await expect(this.page.getByRole('row').filter({ hasText: productName }).first()).toBeVisible();
   }
 
   /**
    * Assert product not in list
    */
   async assertProductNotInList(productName: string) {
-    await expect(this.page.getByRole('row').filter({ hasText: productName })).not.toBeVisible();
+    await expect(this.page.getByRole('row').filter({ hasText: productName })).toHaveCount(0);
   }
 
   /**
