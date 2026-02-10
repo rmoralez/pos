@@ -26,7 +26,7 @@ test.describe('Settings Management', () => {
   test.describe('Business Information', () => {
     test('should display business information', async ({ page }) => {
       // Should be on Business tab by default
-      await expect(page.getByText('Información del Negocio')).toBeVisible();
+      await expect(page.getByText('Información del Negocio').first()).toBeVisible(); // .first() to handle paragraph and heading
 
       // Check form fields exist
       await expect(page.getByLabel('Nombre del Comercio')).toBeVisible();
@@ -36,10 +36,10 @@ test.describe('Settings Management', () => {
 
     test('should display business statistics', async ({ page }) => {
       await expect(page.getByText('Estadísticas')).toBeVisible();
-      await expect(page.getByText('Usuarios')).toBeVisible();
-      await expect(page.getByText('Ubicaciones')).toBeVisible();
-      await expect(page.getByText('Productos')).toBeVisible();
-      await expect(page.getByText('Ventas')).toBeVisible();
+      await expect(page.getByText('Usuarios').first()).toBeVisible(); // .first() to handle tab and statistics text
+      await expect(page.getByText('Ubicaciones').first()).toBeVisible(); // .first() to handle tab and statistics text
+      await expect(page.getByText('Productos').first()).toBeVisible(); // .first() to handle potential duplicates
+      await expect(page.getByText('Ventas').first()).toBeVisible(); // .first() to handle potential duplicates
     });
   });
 
