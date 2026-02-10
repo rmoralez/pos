@@ -18,6 +18,13 @@ test.describe('Customer Management', () => {
     });
 
     test('should show customer table headers', async ({ page }) => {
+      // Create a customer first to ensure table is rendered
+      await page.getByRole('button', { name: /Nuevo Cliente/i }).click();
+      await actions.fillField('Nombre', 'Test Customer for Headers');
+      await page.getByRole('button', { name: 'Crear Cliente' }).click();
+      await actions.waitForToast('Cliente creado');
+
+      // Now check table headers are visible
       await expect(page.getByText('Nombre').first()).toBeVisible();
       await expect(page.getByText('Email').first()).toBeVisible();
       await expect(page.getByText('Teléfono').first()).toBeVisible();
@@ -99,8 +106,8 @@ test.describe('Customer Management', () => {
       await actions.fillField('Email', email);
       await page.getByRole('button', { name: 'Crear Cliente' }).click();
 
-      // Should show error
-      await expect(page.getByText(/email.*existe/i).first()).toBeVisible();
+      // Should show error (English message from API)
+      await expect(page.getByText(/email.*already exists/i).first()).toBeVisible();
     });
   });
 
