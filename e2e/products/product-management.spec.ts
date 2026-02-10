@@ -82,7 +82,7 @@ test.describe('Product Management', () => {
       await actions.clickButton('Guardar Producto');
 
       // Should show error
-      await expect(page.getByText(/SKU ya existe|SKU already exists/i)).toBeVisible();
+      await expect(page.getByText(/SKU ya existe|SKU already exists/i).first()).toBeVisible();
     });
 
     test('should show validation error with empty required fields', async ({ page }) => {
@@ -111,7 +111,7 @@ test.describe('Product Management', () => {
       await actions.clickButton('Guardar Producto');
 
       // Should show error
-      await expect(page.getByText(/precio.*positivo|price.*positive/i)).toBeVisible();
+      await expect(page.getByText(/precio.*positivo|price.*positive/i).first()).toBeVisible();
     });
 
     test('should show validation error with invalid tax rate', async ({ page }) => {
@@ -130,7 +130,7 @@ test.describe('Product Management', () => {
       await actions.clickButton('Guardar Producto');
 
       // Should show error
-      await expect(page.getByText(/tasa.*impuesto.*válida|tax rate.*valid/i)).toBeVisible();
+      await expect(page.getByText(/tasa.*impuesto.*válida|tax rate.*valid/i).first()).toBeVisible();
     });
 
     test('should handle decimal prices correctly', async ({ page }) => {
@@ -229,7 +229,7 @@ test.describe('Product Management', () => {
       await actions.clickButton('Guardar Producto');
 
       // Should show error
-      await expect(page.getByText(/SKU ya existe|SKU already exists/i)).toBeVisible();
+      await expect(page.getByText(/SKU ya existe|SKU already exists/i).first()).toBeVisible();
     });
 
     test('should toggle product active status', async ({ page }) => {
@@ -390,7 +390,7 @@ test.describe('Product Management', () => {
       await actions.clickButton('Buscar');
 
       // Should show empty state or no results message
-      await expect(page.getByText(/no hay productos|no products found/i)).toBeVisible();
+      await expect(page.getByText(/no hay productos|no products found/i).first()).toBeVisible();
     });
   });
 
