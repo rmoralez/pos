@@ -70,13 +70,19 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
       const method = productId ? "PUT" : "POST"
 
       const payload = {
-        ...formData,
+        sku: formData.sku,
+        barcode: formData.barcode || undefined,
+        name: formData.name,
+        description: formData.description || undefined,
         costPrice: parseFloat(formData.costPrice),
         salePrice: parseFloat(formData.salePrice),
         taxRate: parseFloat(formData.taxRate),
+        unit: formData.unit,
+        brand: formData.brand || undefined,
+        categoryId: formData.categoryId || undefined,
         minStock: parseInt(formData.minStock),
+        trackStock: formData.trackStock,
         initialStock: formData.initialStock ? parseInt(formData.initialStock) : undefined,
-        categoryId: formData.categoryId || null,
       }
 
       const response = await fetch(url, {
@@ -93,10 +99,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
       }
 
       toast({
-        title: productId ? "Producto actualizado" : "Producto creado",
-        description: productId
-          ? "El producto ha sido actualizado exitosamente"
-          : "El producto ha sido creado exitosamente",
+        title: productId ? "Producto actualizado exitosamente" : "Producto creado exitosamente",
       })
 
       router.push("/dashboard/products")
@@ -124,7 +127,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="sku">SKU *</Label>
+              <Label htmlFor="sku">SKU</Label>
               <Input
                 id="sku"
                 value={formData.sku}
@@ -135,7 +138,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="barcode">Código de Barras</Label>
+              <Label htmlFor="barcode">Código de barras</Label>
               <Input
                 id="barcode"
                 value={formData.barcode}
@@ -147,7 +150,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="name">Nombre del Producto *</Label>
+            <Label htmlFor="name">Nombre</Label>
             <Input
               id="name"
               value={formData.name}
@@ -213,7 +216,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="costPrice">Precio de Costo *</Label>
+              <Label htmlFor="costPrice">Precio de costo</Label>
               <Input
                 id="costPrice"
                 type="number"
@@ -226,7 +229,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="salePrice">Precio de Venta *</Label>
+              <Label htmlFor="salePrice">Precio de venta</Label>
               <Input
                 id="salePrice"
                 type="number"
@@ -239,22 +242,16 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="taxRate">IVA (%)</Label>
-              <Select
+              <Label htmlFor="taxRate">Tasa de impuesto</Label>
+              <Input
+                id="taxRate"
+                type="number"
+                step="0.01"
                 value={formData.taxRate}
-                onValueChange={(value) => setFormData({ ...formData, taxRate: value })}
+                onChange={(e) => setFormData({ ...formData, taxRate: e.target.value })}
                 disabled={isLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">0%</SelectItem>
-                  <SelectItem value="10.5">10.5%</SelectItem>
-                  <SelectItem value="21">21%</SelectItem>
-                  <SelectItem value="27">27%</SelectItem>
-                </SelectContent>
-              </Select>
+                placeholder="21"
+              />
             </div>
           </div>
         </CardContent>
@@ -302,7 +299,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
             </div>
             {!productId && (
               <div className="space-y-2">
-                <Label htmlFor="initialStock">Stock Inicial</Label>
+                <Label htmlFor="initialStock">Stock inicial</Label>
                 <Input
                   id="initialStock"
                   type="number"
@@ -327,7 +324,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
           Cancelar
         </Button>
         <Button type="submit" disabled={isLoading}>
-          {isLoading ? "Guardando..." : productId ? "Actualizar Producto" : "Crear Producto"}
+          {isLoading ? "Guardando..." : "Guardar Producto"}
         </Button>
       </div>
     </form>

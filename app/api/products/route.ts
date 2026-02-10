@@ -106,13 +106,40 @@ export async function POST(req: Request) {
         },
       })
 
-      // Create initial stock for user's location if specified
-      if (user.locationId && body.initialStock !== undefined) {
+      // Create initial stock if specified (support both 'initialStock' and 'stock' fields)
+      const stockQuantity = body.initialStock ?? body.stock
+      if (stockQuantity !== undefined) {
+        // Get or create location for stock
+        let locationId = user.locationId
+
+        if (!locationId) {
+          // Find or create default location for this tenant
+          let defaultLocation = await tx.location.findFirst({
+            where: {
+              tenantId: user.tenantId,
+            },
+          })
+
+          if (!defaultLocation) {
+            // Create a default location
+            defaultLocation = await tx.location.create({
+              data: {
+                tenantId: user.tenantId,
+                name: "Sucursal Principal",
+                address: "",
+                isMain: true,
+              },
+            })
+          }
+
+          locationId = defaultLocation.id
+        }
+
         await tx.stock.create({
           data: {
             productId: newProduct.id,
-            locationId: user.locationId,
-            quantity: body.initialStock || 0,
+            locationId,
+            quantity: stockQuantity || 0,
           },
         })
       }

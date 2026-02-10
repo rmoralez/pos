@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   Table,
   TableBody,
@@ -14,9 +15,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Search, Plus, Minus, Trash2, ShoppingCart, DollarSign } from "lucide-react"
+import { Search, Plus, Minus, Trash2, ShoppingCart, DollarSign, AlertCircle } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { PaymentDialog } from "@/components/pos/payment-dialog"
+import Link from "next/link"
 
 interface Product {
   id: string
@@ -41,6 +43,25 @@ export default function POSPage() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [showPayment, setShowPayment] = useState(false)
+  const [hasCashRegister, setHasCashRegister] = useState(true)
+  const [checkingCashRegister, setCheckingCashRegister] = useState(true)
+
+  // Check for open cash register on component mount
+  useEffect(() => {
+    const checkCashRegister = async () => {
+      try {
+        const response = await fetch("/api/cash-registers/current")
+        setHasCashRegister(response.ok)
+      } catch (error) {
+        console.error("Error checking cash register:", error)
+        setHasCashRegister(false)
+      } finally {
+        setCheckingCashRegister(false)
+      }
+    }
+
+    checkCashRegister()
+  }, [])
 
   const searchProducts = useCallback(async () => {
     try {
@@ -93,8 +114,8 @@ export default function POSPage() {
       }
       updateQuantity(product.id, existingItem.quantity + 1)
     } else {
-      const subtotal = product.salePrice
-      const taxAmount = (subtotal * product.taxRate) / 100
+      const subtotal = Number(product.salePrice)
+      const taxAmount = (subtotal * Number(product.taxRate)) / 100
       const total = subtotal + taxAmount
 
       setCart([...cart, {
@@ -117,8 +138,8 @@ export default function POSPage() {
 
     setCart(cart.map(item => {
       if (item.product.id === productId) {
-        const subtotal = item.product.salePrice * newQuantity
-        const taxAmount = (subtotal * item.product.taxRate) / 100
+        const subtotal = Number(item.product.salePrice) * newQuantity
+        const taxAmount = (subtotal * Number(item.product.taxRate)) / 100
         const total = subtotal + taxAmount
 
         return {
@@ -171,6 +192,19 @@ export default function POSPage() {
         </p>
       </div>
 
+      {!checkingCashRegister && !hasCashRegister && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>No hay caja abierta</AlertTitle>
+          <AlertDescription>
+            Debes abrir una caja antes de poder registrar ventas.{" "}
+            <Link href="/dashboard/cash" className="underline font-medium">
+              Ir a Gestión de Caja
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Products Search */}
         <div className="lg:col-span-2 space-y-4">
@@ -212,7 +246,7 @@ export default function POSPage() {
                             Stock: {stockTotal}
                           </Badge>
                           <p className="text-lg font-bold">
-                            ${product.salePrice.toLocaleString("es-AR")}
+                            ${Number(product.salePrice).toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </p>
                         </div>
                       </div>
@@ -318,7 +352,7 @@ export default function POSPage() {
                 <Button
                   className="w-full"
                   size="lg"
-                  disabled={cart.length === 0}
+                  disabled={cart.length === 0 || !hasCashRegister}
                   onClick={() => setShowPayment(true)}
                 >
                   <DollarSign className="mr-2 h-5 w-5" />

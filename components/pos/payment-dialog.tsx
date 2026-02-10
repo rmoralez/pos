@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -35,8 +36,25 @@ interface PaymentDialogProps {
 export function PaymentDialog({ open, onClose, cart, totals, onSuccess }: PaymentDialogProps) {
   const [isProcessing, setIsProcessing] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState("CASH")
+  const [cashAmount, setCashAmount] = useState("")
+
+  const change = cashAmount ? parseFloat(cashAmount) - totals.total : 0
+  const isCashPayment = paymentMethod === "CASH"
+  const canProcess = !isCashPayment || (cashAmount && parseFloat(cashAmount) >= totals.total)
 
   const handlePayment = async () => {
+    // Validate cash payment
+    if (isCashPayment) {
+      if (!cashAmount || parseFloat(cashAmount) < totals.total) {
+        toast({
+          title: "Error",
+          description: "El monto recibido debe ser mayor o igual al total",
+          variant: "destructive",
+        })
+        return
+      }
+    }
+
     setIsProcessing(true)
 
     try {
@@ -50,6 +68,8 @@ export function PaymentDialog({ open, onClose, cart, totals, onSuccess }: Paymen
         paymentMethod,
       }
 
+      console.log("Sending sale data:", saleData)
+
       const response = await fetch("/api/sales", {
         method: "POST",
         headers: {
@@ -58,13 +78,25 @@ export function PaymentDialog({ open, onClose, cart, totals, onSuccess }: Paymen
         body: JSON.stringify(saleData),
       })
 
+      console.log("Response status:", response.status)
+
       if (!response.ok) {
         const error = await response.json()
+        console.error("Sale error:", error)
         throw new Error(error.error || "Failed to process sale")
       }
 
+      const result = await response.json()
+      console.log("Sale successful:", result)
+
+      toast({
+        title: "Venta completada",
+        description: `Venta procesada exitosamente${isCashPayment && change > 0 ? `. Vuelto: $${change.toFixed(2)}` : ""}`,
+      })
+
       onSuccess()
     } catch (error: any) {
+      console.error("Payment error:", error)
       toast({
         title: "Error",
         description: error.message || "No se pudo procesar la venta",
@@ -98,14 +130,14 @@ export function PaymentDialog({ open, onClose, cart, totals, onSuccess }: Paymen
             <div className="flex justify-between text-lg">
               <span>Total a pagar:</span>
               <span className="font-bold text-2xl">
-                ${totals.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                ${Number(totals.total).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="paymentMethod">Método de Pago</Label>
+              <Label htmlFor="paymentMethod">Método de pago</Label>
               <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger>
+                <SelectTrigger id="paymentMethod">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -120,6 +152,25 @@ export function PaymentDialog({ open, onClose, cart, totals, onSuccess }: Paymen
                 </SelectContent>
               </Select>
             </div>
+
+            {isCashPayment && (
+              <div className="space-y-2">
+                <Label htmlFor="cashAmount">Monto recibido</Label>
+                <Input
+                  id="cashAmount"
+                  type="number"
+                  step="0.01"
+                  value={cashAmount}
+                  onChange={(e) => setCashAmount(e.target.value)}
+                  placeholder="0.00"
+                />
+                {cashAmount && parseFloat(cashAmount) >= totals.total && (
+                  <p className="text-sm text-muted-foreground">
+                    Vuelto: ${change.toFixed(2)}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="border-t pt-4 space-y-2">
@@ -149,7 +200,7 @@ export function PaymentDialog({ open, onClose, cart, totals, onSuccess }: Paymen
             <Button
               className="flex-1"
               onClick={handlePayment}
-              disabled={isProcessing}
+              disabled={isProcessing || !canProcess}
             >
               {isProcessing ? "Procesando..." : "Confirmar Pago"}
             </Button>
