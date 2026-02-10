@@ -125,8 +125,7 @@ export default function POSPage() {
         taxAmount,
         total,
       }])
-      setSearch("")
-      setProducts([])
+      // Don't clear search - allows adding multiple items quickly
     }
   }
 
@@ -292,6 +291,7 @@ export default function POSPage() {
                           variant="outline"
                           size="icon"
                           onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                          aria-label="Minus"
                         >
                           <Minus className="h-4 w-4" />
                         </Button>
@@ -300,6 +300,7 @@ export default function POSPage() {
                           variant="outline"
                           size="icon"
                           onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                          aria-label="Plus"
                         >
                           <Plus className="h-4 w-4" />
                         </Button>
@@ -307,6 +308,7 @@ export default function POSPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => removeFromCart(item.product.id)}
+                          aria-label="Delete"
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
