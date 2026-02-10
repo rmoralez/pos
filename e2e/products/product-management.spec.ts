@@ -426,10 +426,10 @@ test.describe('Product Management', () => {
       await page.goto('/dashboard/products');
 
       const rowWithStock = page.getByRole('row').filter({ hasText: productWithStock.name });
-      await expect(rowWithStock.getByText('10')).toBeVisible();
+      await expect(rowWithStock.getByText('10').last()).toBeVisible(); // .last() to get the badge, not price
 
       const rowNoStock = page.getByRole('row').filter({ hasText: productNoStock.name });
-      await expect(rowNoStock.getByText('0')).toBeVisible();
+      await expect(rowNoStock.getByText('0').last()).toBeVisible(); // .last() to get the badge, not price
     });
 
     test('should display product status correctly', async ({ page }) => {
