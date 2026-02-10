@@ -47,7 +47,7 @@ test.describe('Stock Management', () => {
 
       // Check for stock table
       await expect(page.getByText('SKU')).toBeVisible();
-      await expect(page.getByText('Stock Actual')).toBeVisible();
+      await expect(page.getByText('Stock Actual').first()).toBeVisible(); // .first() to handle tab and column header
 
       // Product should appear in stock list
       await expect(page.getByText(testProduct.name).first()).toBeVisible();
@@ -55,7 +55,7 @@ test.describe('Stock Management', () => {
 
     test('should show statistics cards', async ({ page }) => {
       await expect(page.getByText('Total Productos')).toBeVisible();
-      await expect(page.getByText('Stock Bajo')).toBeVisible();
+      await expect(page.getByText('Stock Bajo').first()).toBeVisible(); // .first() to handle heading and button
       await expect(page.getByText('Movimientos Recientes')).toBeVisible();
     });
 
