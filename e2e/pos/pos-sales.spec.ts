@@ -166,7 +166,7 @@ test.describe('Point of Sale', () => {
 
       // Increase quantity using + button
       const cartItem = page.locator('.border.rounded-lg').filter({ hasText: 'Mouse Logitech' });
-      await cartItem.getByRole('button').filter({ hasText: 'Plus' }).click();
+      await cartItem.getByLabel('Plus').click();
 
       // Should show quantity 2 and updated total
       await expect(page.getByText('x 2')).toBeVisible();
@@ -188,7 +188,7 @@ test.describe('Point of Sale', () => {
 
       // Decrease quantity
       const cartItem = page.locator('.border.rounded-lg').filter({ hasText: 'Mouse Logitech' });
-      await cartItem.getByRole('button').filter({ hasText: 'Minus' }).click();
+      await cartItem.getByLabel('Minus').click();
 
       // Should show quantity 1
       await expect(page.getByText('x 1')).toBeVisible();
@@ -206,7 +206,7 @@ test.describe('Point of Sale', () => {
 
       // Decrease quantity to 0
       const cartItem = page.locator('.border.rounded-lg').filter({ hasText: 'Mouse Logitech' });
-      await cartItem.getByRole('button').filter({ hasText: 'Minus' }).click();
+      await cartItem.getByLabel('Minus').click();
 
       // Cart should be empty
       await assertions.assertCartItemCount(0);
@@ -224,7 +224,7 @@ test.describe('Point of Sale', () => {
 
       // Click trash button
       const cartItem = page.locator('.border.rounded-lg').filter({ hasText: 'Mouse Logitech' });
-      await cartItem.getByRole('button').filter({ hasText: 'Trash' }).click();
+      await cartItem.getByLabel('Delete').click();
 
       // Cart should be empty
       await assertions.assertCartItemCount(0);
