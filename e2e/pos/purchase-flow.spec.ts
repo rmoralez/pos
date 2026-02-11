@@ -159,7 +159,7 @@ test.describe('POS Purchase Flow', () => {
       await expect(page.getByText('1 producto en el carrito')).toBeVisible();
 
       // Increase quantity using + button
-      await page.getByRole('button', { name: /\+/i }).first().click();
+      await page.getByLabel('Plus').first().click();
       await page.waitForTimeout(300);
 
       // Verify quantity updated
@@ -184,15 +184,15 @@ test.describe('POS Purchase Flow', () => {
       await page.getByText(productName).click();
 
       // Increase quantity to 3
-      await page.getByRole('button', { name: /\+/i }).first().click();
+      await page.getByLabel('Plus').first().click();
       await page.waitForTimeout(300);
-      await page.getByRole('button', { name: /\+/i }).first().click();
+      await page.getByLabel('Plus').first().click();
       await page.waitForTimeout(300);
 
       await expect(page.getByText('3 productos en el carrito')).toBeVisible();
 
       // Decrease quantity
-      await page.getByRole('button', { name: /\-/i }).first().click();
+      await page.getByLabel('Minus').first().click();
       await page.waitForTimeout(300);
 
       await expect(page.getByText('2 productos en el carrito')).toBeVisible();
@@ -209,8 +209,7 @@ test.describe('POS Purchase Flow', () => {
       await expect(page.getByText('1 producto en el carrito')).toBeVisible();
 
       // Click trash button to remove
-      const trashButton = page.locator('button').filter({ has: page.locator('svg[class*="lucide-trash"]') }).first();
-      await trashButton.click();
+      await page.getByLabel('Delete').first().click();
 
       // Cart should be empty
       await expect(page.getByText('El carrito está vacío')).toBeVisible();
@@ -308,7 +307,7 @@ test.describe('POS Purchase Flow', () => {
 
       // Increase quantity to 5
       for (let i = 0; i < 4; i++) {
-        await page.getByRole('button', { name: /\+/i }).first().click();
+        await page.getByLabel('Plus').first().click();
         await page.waitForTimeout(200);
       }
 
@@ -357,7 +356,7 @@ test.describe('POS Purchase Flow', () => {
       await page.getByText('Low Stock Product').click();
 
       // Try to increase quantity beyond available stock
-      await page.getByRole('button', { name: /\+/i }).first().click();
+      await page.getByLabel('Plus').first().click();
       await page.waitForTimeout(500);
 
       // Should show error toast
