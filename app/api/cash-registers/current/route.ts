@@ -53,7 +53,10 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    console.log('[API] Cash register found:', cashRegister ? `ID: ${cashRegister.id}` : 'null')
+
     if (!cashRegister) {
+      console.log('[API] No cash register found - returning 404')
       return NextResponse.json(
         { error: "No open cash register found" },
         { status: 404 }
@@ -61,6 +64,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Calculate current balance
+    console.log('[API] Fetching sales and transactions for cash register:', cashRegister.id)
     const [salesTotal, transactions] = await Promise.all([
       prisma.sale.aggregate({
         where: {
@@ -75,16 +79,21 @@ export async function GET(request: NextRequest) {
         where: {
           cashRegisterId: cashRegister.id,
         },
+        include: {
+          movementType: true,
+        },
       }),
     ])
+
+    console.log('[API] Sales and transactions fetched successfully')
 
     // Calculate current balance
     const salesAmount = Number(salesTotal._sum.total || 0)
     const incomes = transactions
-      .filter((t) => t.type === "INCOME")
+      .filter((t) => t.movementType?.transactionType === "INCOME")
       .reduce((sum, t) => sum + Number(t.amount), 0)
     const expenses = transactions
-      .filter((t) => t.type === "EXPENSE")
+      .filter((t) => t.movementType?.transactionType === "EXPENSE")
       .reduce((sum, t) => sum + Number(t.amount), 0)
 
     const currentBalance =
