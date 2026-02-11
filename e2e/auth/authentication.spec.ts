@@ -288,8 +288,8 @@ test.describe('Authentication', () => {
     test('should redirect to login when accessing protected route without auth', async ({
       browser,
     }) => {
-      // Create new context without auth
-      const context = await browser.newContext();
+      // Create new context without auth - explicitly no storage state
+      const context = await browser.newContext({ storageState: undefined });
       const page = await context.newPage();
       const assertions = new Assertions(page);
 
@@ -317,7 +317,7 @@ test.describe('Authentication', () => {
     test('should redirect to login when accessing products without auth', async ({
       browser,
     }) => {
-      const context = await browser.newContext();
+      const context = await browser.newContext({ storageState: undefined });
       const page = await context.newPage();
       const assertions = new Assertions(page);
 
@@ -334,7 +334,7 @@ test.describe('Authentication', () => {
     });
 
     test('should redirect to login when accessing POS without auth', async ({ browser }) => {
-      const context = await browser.newContext();
+      const context = await browser.newContext({ storageState: undefined });
       const page = await context.newPage();
       const assertions = new Assertions(page);
 

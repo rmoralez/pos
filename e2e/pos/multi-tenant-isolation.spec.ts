@@ -238,8 +238,21 @@ test.describe('Multi-Tenant Isolation', () => {
         await pageActions1.clickButton('Guardar Producto');
         await pageActions1.waitForToast('Producto creado exitosamente');
 
+        // Open cash register via API
+        const cashRegRes = await actions1.page.request.post('http://localhost:3000/api/cash-registers', {
+          data: {
+            openingBalance: 10000,
+            notes: 'Tenant A cash register',
+          },
+        });
+
+        if (!cashRegRes.ok()) {
+          throw new Error(`Failed to open cash register: ${await cashRegRes.text()}`);
+        }
+
         // Make a sale
         await actions1.page.goto('/dashboard/pos');
+        await actions1.page.reload(); // Reload to ensure cash register state is updated
         await pageActions1.search('Buscar producto', tenantA.product.name);
         await actions1.page.getByText(tenantA.product.name).click();
         await pageActions1.clickButton('Procesar Pago');
@@ -308,18 +321,19 @@ test.describe('Multi-Tenant Isolation', () => {
         const pageActions1 = new PageActions(actions1.page);
 
         await actions1.page.goto('/register');
-        await pageActions1.fillField('Nombre completo', tenantA.user.name);
+        await pageActions1.fillField('Nombre del Comercio', tenantA.tenant.name);
+        await pageActions1.fillField('CUIT del Comercio', tenantA.tenant.cuit);
+        await pageActions1.fillField('Tu Nombre', tenantA.user.name);
         await pageActions1.fillField('Email', tenantA.user.email);
         await pageActions1.fillField('Contraseña', tenantA.user.password, true);
-        await pageActions1.fillField('Confirmar contraseña', tenantA.user.password);
-        await pageActions1.fillField('Nombre de la empresa', tenantA.tenant.name);
-        await pageActions1.fillField('CUIT', tenantA.tenant.cuit);
-        await pageActions1.fillField('Dirección', tenantA.tenant.address);
-        await pageActions1.fillField('Ciudad', tenantA.tenant.city);
-        await pageActions1.fillField('Provincia', tenantA.tenant.province);
-        await pageActions1.fillField('Código Postal', tenantA.tenant.postalCode);
-        await pageActions1.fillField('Teléfono', tenantA.tenant.phone);
+        await pageActions1.fillField('Confirmar Contraseña', tenantA.user.password, true);
         await pageActions1.clickButton('Registrarse');
+        await pageActions1.waitForNavigation('/login');
+
+        // Login
+        await pageActions1.fillField('Email', tenantA.user.email);
+        await pageActions1.fillField('Contraseña', tenantA.user.password, true);
+        await pageActions1.clickButton('Iniciar Sesión');
         await pageActions1.waitForNavigation('/dashboard');
 
         await actions1.page.goto('/dashboard/products/new');
@@ -348,18 +362,19 @@ test.describe('Multi-Tenant Isolation', () => {
         const pageActions2 = new PageActions(actions2.page);
 
         await actions2.page.goto('/register');
-        await pageActions2.fillField('Nombre completo', tenantB.user.name);
+        await pageActions2.fillField('Nombre del Comercio', tenantB.tenant.name);
+        await pageActions2.fillField('CUIT del Comercio', tenantB.tenant.cuit);
+        await pageActions2.fillField('Tu Nombre', tenantB.user.name);
         await pageActions2.fillField('Email', tenantB.user.email);
         await pageActions2.fillField('Contraseña', tenantB.user.password, true);
-        await pageActions2.fillField('Confirmar contraseña', tenantB.user.password);
-        await pageActions2.fillField('Nombre de la empresa', tenantB.tenant.name);
-        await pageActions2.fillField('CUIT', tenantB.tenant.cuit);
-        await pageActions2.fillField('Dirección', tenantB.tenant.address);
-        await pageActions2.fillField('Ciudad', tenantB.tenant.city);
-        await pageActions2.fillField('Provincia', tenantB.tenant.province);
-        await pageActions2.fillField('Código Postal', tenantB.tenant.postalCode);
-        await pageActions2.fillField('Teléfono', tenantB.tenant.phone);
+        await pageActions2.fillField('Confirmar Contraseña', tenantB.user.password, true);
         await pageActions2.clickButton('Registrarse');
+        await pageActions2.waitForNavigation('/login');
+
+        // Login
+        await pageActions2.fillField('Email', tenantB.user.email);
+        await pageActions2.fillField('Contraseña', tenantB.user.password, true);
+        await pageActions2.clickButton('Iniciar Sesión');
         await pageActions2.waitForNavigation('/dashboard');
 
         // Try to search for Tenant A's product in Tenant B's POS
