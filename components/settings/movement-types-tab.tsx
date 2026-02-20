@@ -77,7 +77,7 @@ export function MovementTypesTab() {
     fetchMovementTypes()
   }, [fetchMovementTypes])
 
-  const handleOpenDialog = (type?: MovementType) => {
+  const handleOpenDialog = (type?: MovementType, defaultTransactionType?: "INCOME" | "EXPENSE") => {
     if (type) {
       setEditingType(type)
       setFormData({
@@ -91,7 +91,7 @@ export function MovementTypesTab() {
       setFormData({
         name: "",
         description: "",
-        transactionType: "INCOME",
+        transactionType: defaultTransactionType ?? "INCOME",
         isActive: true,
       })
     }
@@ -196,10 +196,7 @@ export function MovementTypesTab() {
               Categorías para registrar ingresos de efectivo
             </CardDescription>
           </div>
-          <Button onClick={() => {
-            setFormData({ ...formData, transactionType: "INCOME" })
-            handleOpenDialog()
-          }}>
+          <Button onClick={() => handleOpenDialog(undefined, "INCOME")}>
             <Plus className="mr-2 h-4 w-4" />
             Nuevo Ingreso
           </Button>
@@ -274,10 +271,7 @@ export function MovementTypesTab() {
               Categorías para registrar egresos de efectivo
             </CardDescription>
           </div>
-          <Button onClick={() => {
-            setFormData({ ...formData, transactionType: "EXPENSE" })
-            handleOpenDialog()
-          }}>
+          <Button onClick={() => handleOpenDialog(undefined, "EXPENSE")}>
             <Plus className="mr-2 h-4 w-4" />
             Nuevo Egreso
           </Button>

@@ -51,7 +51,7 @@ export default function SalesPage() {
       if (!response.ok) throw new Error("Failed to fetch sales")
 
       const data = await response.json()
-      setSales(data)
+      setSales(data.sales || [])
     } catch (error) {
       toast({
         title: "Error",

@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
   Table,
   TableBody,
@@ -18,7 +19,11 @@ import {
 import { Search, Plus, Minus, Trash2, ShoppingCart, DollarSign, AlertCircle } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { PaymentDialog } from "@/components/pos/payment-dialog"
+import { KeyboardShortcutsHelp, KeyboardShortcutsTrigger } from "@/components/pos/keyboard-shortcuts-help"
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts"
 import Link from "next/link"
+import { calculateDiscountAmount, type DiscountType } from "@/lib/pricing"
+import { CustomerSelector, type Customer } from "@/components/pos/customer-selector"
 
 interface Product {
   id: string
@@ -45,6 +50,15 @@ export default function POSPage() {
   const [showPayment, setShowPayment] = useState(false)
   const [hasCashRegister, setHasCashRegister] = useState(true)
   const [checkingCashRegister, setCheckingCashRegister] = useState(true)
+  const [cartDiscountType, setCartDiscountType] = useState<DiscountType>("FIXED")
+  const [cartDiscountValue, setCartDiscountValue] = useState(0)
+  const [initialPaymentMethod, setInitialPaymentMethod] = useState<string>("CASH")
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+
+  // Refs for focusing inputs via keyboard shortcuts
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const discountInputRef = useRef<HTMLInputElement>(null)
 
   // Check for open cash register on component mount
   useEffect(() => {
@@ -114,9 +128,11 @@ export default function POSPage() {
       }
       updateQuantity(product.id, existingItem.quantity + 1)
     } else {
-      const subtotal = Number(product.salePrice)
-      const taxAmount = (subtotal * Number(product.taxRate)) / 100
-      const total = subtotal + taxAmount
+      // salePrice already includes tax - we just extract it for display purposes
+      const total = Number(product.salePrice)
+      const taxRate = Number(product.taxRate)
+      const subtotal = total / (1 + taxRate / 100)
+      const taxAmount = total - subtotal
 
       setCart([...cart, {
         product,
@@ -137,9 +153,11 @@ export default function POSPage() {
 
     setCart(cart.map(item => {
       if (item.product.id === productId) {
-        const subtotal = Number(item.product.salePrice) * newQuantity
-        const taxAmount = (subtotal * Number(item.product.taxRate)) / 100
-        const total = subtotal + taxAmount
+        // salePrice already includes tax - we just extract it for display purposes
+        const total = Number(item.product.salePrice) * newQuantity
+        const taxRate = Number(item.product.taxRate)
+        const subtotal = total / (1 + taxRate / 100)
+        const taxAmount = total - subtotal
 
         return {
           ...item,
@@ -160,15 +178,70 @@ export default function POSPage() {
   const getCartTotals = () => {
     const subtotal = cart.reduce((acc, item) => acc + item.subtotal, 0)
     const taxAmount = cart.reduce((acc, item) => acc + item.taxAmount, 0)
-    const total = cart.reduce((acc, item) => acc + item.total, 0)
+    const totalBeforeDiscount = cart.reduce((acc, item) => acc + item.total, 0)
 
-    return { subtotal, taxAmount, total }
+    // Calculate cart-level discount
+    const cartDiscountAmount = calculateDiscountAmount(totalBeforeDiscount, cartDiscountType, cartDiscountValue)
+    const total = totalBeforeDiscount - cartDiscountAmount
+
+    return {
+      subtotal,
+      taxAmount,
+      total,
+      cartDiscountAmount,
+      cartDiscountType,
+      cartDiscountValue
+    }
   }
 
   const clearCart = () => {
     setCart([])
     setSearch("")
     setProducts([])
+    setCartDiscountType("FIXED")
+    setCartDiscountValue(0)
+    setSelectedCustomer(null)
+  }
+
+  const handleClearCartWithConfirmation = () => {
+    if (cart.length === 0) return
+
+    const confirmed = window.confirm(
+      "¿Estás seguro de que deseas limpiar el carrito? Se perderán todos los productos."
+    )
+
+    if (confirmed) {
+      clearCart()
+      toast({
+        title: "Carrito limpiado",
+        description: "Se han eliminado todos los productos del carrito",
+      })
+    }
+  }
+
+  const handleOpenPayment = (method: string) => {
+    if (cart.length === 0 || !hasCashRegister) return
+    setInitialPaymentMethod(method)
+    setShowPayment(true)
+  }
+
+  const handleFocusSearch = () => {
+    searchInputRef.current?.focus()
+  }
+
+  const handleFocusDiscount = () => {
+    if (cart.length === 0) return
+    discountInputRef.current?.focus()
+  }
+
+  const handleAddFirstProduct = () => {
+    if (products.length > 0 && search.length >= 2) {
+      addToCart(products[0])
+      toast({
+        title: "Producto agregado",
+        description: `${products[0].name} agregado al carrito`,
+      })
+    }
   }
 
   const handlePaymentSuccess = () => {
@@ -180,15 +253,147 @@ export default function POSPage() {
     })
   }
 
+  // Keyboard shortcuts - only active when payment dialog is closed
+  useKeyboardShortcuts([
+    // Payment methods
+    {
+      key: "F1",
+      description: "Abrir pago con Efectivo",
+      action: () => handleOpenPayment("CASH"),
+      disabled: showPayment,
+    },
+    {
+      key: "1",
+      description: "Abrir pago con Efectivo",
+      action: () => handleOpenPayment("CASH"),
+      disabled: showPayment,
+    },
+    {
+      key: "F2",
+      description: "Abrir pago con Débito",
+      action: () => handleOpenPayment("DEBIT_CARD"),
+      disabled: showPayment,
+    },
+    {
+      key: "2",
+      description: "Abrir pago con Débito",
+      action: () => handleOpenPayment("DEBIT_CARD"),
+      disabled: showPayment,
+    },
+    {
+      key: "F3",
+      description: "Abrir pago con Crédito",
+      action: () => handleOpenPayment("CREDIT_CARD"),
+      disabled: showPayment,
+    },
+    {
+      key: "3",
+      description: "Abrir pago con Crédito",
+      action: () => handleOpenPayment("CREDIT_CARD"),
+      disabled: showPayment,
+    },
+    {
+      key: "F4",
+      description: "Abrir pago con Transferencia",
+      action: () => handleOpenPayment("TRANSFER"),
+      disabled: showPayment,
+    },
+    {
+      key: "4",
+      description: "Abrir pago con Transferencia",
+      action: () => handleOpenPayment("TRANSFER"),
+      disabled: showPayment,
+    },
+    {
+      key: "F6",
+      description: "Abrir pago con Cuenta Corriente",
+      action: () => handleOpenPayment("ACCOUNT"),
+      disabled: showPayment,
+    },
+    {
+      key: "6",
+      description: "Abrir pago con Cuenta Corriente",
+      action: () => handleOpenPayment("ACCOUNT"),
+      disabled: showPayment,
+    },
+    // Search
+    {
+      key: "F5",
+      description: "Focus en búsqueda de productos",
+      action: handleFocusSearch,
+      disabled: showPayment,
+    },
+    {
+      key: "/",
+      description: "Focus en búsqueda de productos",
+      action: handleFocusSearch,
+      disabled: showPayment,
+    },
+    // Discount
+    {
+      key: "D",
+      description: "Focus en input de descuento",
+      action: handleFocusDiscount,
+      disabled: showPayment,
+    },
+    {
+      key: "%",
+      description: "Cambiar a descuento porcentual",
+      action: () => {
+        if (cart.length === 0) return
+        setCartDiscountType("PERCENTAGE")
+        setCartDiscountValue(0)
+        discountInputRef.current?.focus()
+      },
+      disabled: showPayment,
+    },
+    {
+      key: "$",
+      description: "Cambiar a descuento monto fijo",
+      action: () => {
+        if (cart.length === 0) return
+        setCartDiscountType("FIXED")
+        setCartDiscountValue(0)
+        discountInputRef.current?.focus()
+      },
+      disabled: showPayment,
+    },
+    // Cart actions
+    {
+      key: "Escape",
+      description: "Limpiar carrito",
+      action: handleClearCartWithConfirmation,
+      disabled: showPayment,
+    },
+    // Help
+    {
+      key: "?",
+      description: "Mostrar ayuda de atajos",
+      action: () => setShowShortcutsHelp(true),
+      disabled: showPayment,
+    },
+  ])
+
+  // Handle Enter key in search input to add first product
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      handleAddFirstProduct()
+    }
+  }
+
   const totals = getCartTotals()
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Punto de Venta</h1>
-        <p className="text-muted-foreground">
-          Registra ventas de forma rápida y sencilla
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Punto de Venta</h1>
+          <p className="text-muted-foreground">
+            Registra ventas de forma rápida y sencilla
+          </p>
+        </div>
+        <KeyboardShortcutsTrigger onClick={() => setShowShortcutsHelp(true)} />
       </div>
 
       {!checkingCashRegister && !hasCashRegister && (
@@ -218,11 +423,14 @@ export default function POSPage() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar producto..."
+                  ref={searchInputRef}
+                  placeholder="Buscar producto... (F5 o /)"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
                   className="pl-10"
                   autoFocus
+                  aria-keyshortcuts="F5 /"
                 />
               </div>
 
@@ -331,42 +539,176 @@ export default function POSPage() {
               <CardTitle>Resumen</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Customer Selection */}
               <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="font-medium">
-                    ${totals.subtotal.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                  </span>
+                <Label className="text-sm font-medium">Cliente (Opcional)</Label>
+                <CustomerSelector
+                  value={selectedCustomer}
+                  onChange={setSelectedCustomer}
+                />
+                {selectedCustomer && (
+                  <div className="text-xs text-muted-foreground">
+                    Cliente seleccionado para la venta
+                  </div>
+                )}
+              </div>
+
+              {/* Prices already include tax - no need to display IVA separately */}
+
+              {/* Discount Section */}
+              {cart.length > 0 && (
+                <div className="border-t pt-4 space-y-3">
+                  <Label className="text-sm font-medium">Descuento General</Label>
+                  <RadioGroup
+                    value={cartDiscountType}
+                    onValueChange={(value) => {
+                      setCartDiscountType(value as DiscountType)
+                      setCartDiscountValue(0)
+                    }}
+                    className="flex gap-4"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="PERCENTAGE" id="discount-percentage" />
+                      <Label htmlFor="discount-percentage" className="font-normal cursor-pointer">
+                        Porcentaje
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="FIXED" id="discount-fixed" />
+                      <Label htmlFor="discount-fixed" className="font-normal cursor-pointer">
+                        Monto Fijo
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      ref={discountInputRef}
+                      type="number"
+                      min="0"
+                      step={cartDiscountType === "PERCENTAGE" ? "1" : "0.01"}
+                      max={cartDiscountType === "PERCENTAGE" ? "100" : undefined}
+                      value={cartDiscountValue === 0 ? "" : cartDiscountValue}
+                      onChange={(e) => {
+                        const value = parseFloat(e.target.value) || 0
+                        if (cartDiscountType === "PERCENTAGE") {
+                          setCartDiscountValue(Math.min(100, Math.max(0, value)))
+                        } else {
+                          const totalBeforeDiscount = cart.reduce((acc, item) => acc + item.total, 0)
+                          setCartDiscountValue(Math.min(totalBeforeDiscount, Math.max(0, value)))
+                        }
+                      }}
+                      placeholder={cartDiscountType === "PERCENTAGE" ? "% (Shift+5)" : "$ (Shift+4)"}
+                      className="flex-1"
+                      aria-keyshortcuts="D"
+                    />
+                    {cartDiscountType === "PERCENTAGE" && (
+                      <span className="text-sm text-muted-foreground">%</span>
+                    )}
+                  </div>
+                  {totals.cartDiscountAmount > 0 && (
+                    <div className="flex justify-between text-sm text-green-600">
+                      <span>Descuento aplicado:</span>
+                      <span className="font-medium">
+                        -${totals.cartDiscountAmount.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">IVA</span>
-                  <span className="font-medium">
-                    ${totals.taxAmount.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="border-t pt-2 flex justify-between text-lg font-bold">
-                  <span>Total</span>
-                  <span>${totals.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
-                </div>
+              )}
+
+              <div className="border-t pt-2 flex justify-between text-2xl font-bold">
+                <span>Total</span>
+                <span>${totals.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
               </div>
 
               <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    size="sm"
+                    disabled={cart.length === 0 || !hasCashRegister}
+                    onClick={() => handleOpenPayment("CASH")}
+                    aria-keyshortcuts="F1 1"
+                    className="relative"
+                  >
+                    <span className="flex items-center gap-1">
+                      Efectivo
+                      <kbd className="hidden sm:inline-block ml-1 px-1 py-0.5 text-xs font-mono bg-primary-foreground/20 rounded">
+                        F1
+                      </kbd>
+                    </span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={cart.length === 0 || !hasCashRegister}
+                    onClick={() => handleOpenPayment("DEBIT_CARD")}
+                    aria-keyshortcuts="F2 2"
+                    className="relative"
+                  >
+                    <span className="flex items-center gap-1">
+                      Débito
+                      <kbd className="hidden sm:inline-block ml-1 px-1 py-0.5 text-xs font-mono bg-primary-foreground/20 rounded">
+                        F2
+                      </kbd>
+                    </span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={cart.length === 0 || !hasCashRegister}
+                    onClick={() => handleOpenPayment("CREDIT_CARD")}
+                    aria-keyshortcuts="F3 3"
+                    className="relative"
+                  >
+                    <span className="flex items-center gap-1">
+                      Crédito
+                      <kbd className="hidden sm:inline-block ml-1 px-1 py-0.5 text-xs font-mono bg-primary-foreground/20 rounded">
+                        F3
+                      </kbd>
+                    </span>
+                  </Button>
+                </div>
                 <Button
                   className="w-full"
-                  size="lg"
+                  size="sm"
+                  variant="outline"
                   disabled={cart.length === 0 || !hasCashRegister}
-                  onClick={() => setShowPayment(true)}
+                  onClick={() => handleOpenPayment("TRANSFER")}
+                  aria-keyshortcuts="F4 4"
                 >
-                  <DollarSign className="mr-2 h-5 w-5" />
-                  Procesar Pago
+                  <span className="flex items-center justify-center gap-2">
+                    Transferencia
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted border border-border rounded">
+                      F4
+                    </kbd>
+                  </span>
+                </Button>
+                <Button
+                  className="w-full"
+                  size="sm"
+                  variant="outline"
+                  disabled={cart.length === 0 || !hasCashRegister}
+                  onClick={() => handleOpenPayment("ACCOUNT")}
+                  aria-keyshortcuts="F6 6"
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    Cuenta Corriente
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted border border-border rounded">
+                      F6
+                    </kbd>
+                  </span>
                 </Button>
                 <Button
                   className="w-full"
                   variant="outline"
-                  onClick={clearCart}
+                  onClick={handleClearCartWithConfirmation}
                   disabled={cart.length === 0}
+                  aria-keyshortcuts="Escape"
                 >
-                  Limpiar Carrito
+                  <span className="flex items-center justify-center gap-2">
+                    Limpiar Carrito
+                    <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted border border-border rounded">
+                      ESC
+                    </kbd>
+                  </span>
                 </Button>
               </div>
             </CardContent>
@@ -380,6 +722,14 @@ export default function POSPage() {
         cart={cart}
         totals={totals}
         onSuccess={handlePaymentSuccess}
+        initialPaymentMethod={initialPaymentMethod}
+        customerId={selectedCustomer?.id ?? null}
+        customerName={selectedCustomer?.name ?? null}
+      />
+
+      <KeyboardShortcutsHelp
+        open={showShortcutsHelp}
+        onClose={() => setShowShortcutsHelp(false)}
       />
     </div>
   )

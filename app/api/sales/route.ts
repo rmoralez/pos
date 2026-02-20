@@ -2,18 +2,37 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/session"
 import { z } from "zod"
+import { Decimal } from "@prisma/client/runtime/library"
+import { calculateDiscountAmount, type DiscountType } from "@/lib/pricing"
+
+const PaymentMethodEnum = z.enum(["CASH", "DEBIT_CARD", "CREDIT_CARD", "TRANSFER", "QR", "CHECK", "ACCOUNT", "OTHER"])
 
 const saleItemSchema = z.object({
   productId: z.string(),
   quantity: z.coerce.number().int().positive(),
   unitPrice: z.coerce.number().positive(),
   taxRate: z.coerce.number().min(0).max(100),
+  discount: z.coerce.number().min(0).max(100).default(0), // Legacy support - percentage discount
+  discountType: z.enum(["PERCENTAGE", "FIXED"]).optional(),
+  discountValue: z.coerce.number().min(0).optional(),
+})
+
+const paymentEntrySchema = z.object({
+  method: PaymentMethodEnum,
+  amount: z.number().positive(),
+  cardLastFour: z.string().optional(),
+  transferReference: z.string().optional(),
 })
 
 const saleSchema = z.object({
   items: z.array(saleItemSchema).min(1),
-  paymentMethod: z.enum(["CASH", "DEBIT_CARD", "CREDIT_CARD", "TRANSFER", "QR", "CHECK", "OTHER"]),
+  // Accept either an array of payments (new) or a single paymentMethod (legacy)
+  payments: z.array(paymentEntrySchema).min(1).optional(),
+  paymentMethod: PaymentMethodEnum.optional(),
   customerId: z.string().optional(),
+  discountAmount: z.number().min(0).default(0), // Legacy support - fixed amount
+  discountType: z.enum(["PERCENTAGE", "FIXED"]).optional(),
+  discountValue: z.coerce.number().min(0).optional(),
 })
 
 export async function GET(req: Request) {
@@ -141,16 +160,54 @@ export async function POST(req: Request) {
     const validatedData = saleSchema.parse(body)
     console.log("[SALES API] Validated data:", validatedData)
 
+    // Normalise the payments array — if legacy paymentMethod sent, wrap it
+    // We need the total to build the legacy wrapper, so we compute it after items validation
+    // For now just stash whichever format arrived; we resolve after total is known (inside tx).
+    const rawPayments = validatedData.payments ?? null
+    const legacyMethod = validatedData.paymentMethod ?? null
+
+    if (!rawPayments && !legacyMethod) {
+      return NextResponse.json(
+        { error: "Se requiere al menos un método de pago" },
+        { status: 400 }
+      )
+    }
+
+    // Validate ACCOUNT payment requirements before entering transaction
+    const accountPayments = rawPayments
+      ? rawPayments.filter(p => p.method === "ACCOUNT")
+      : legacyMethod === "ACCOUNT" ? [{ method: "ACCOUNT" as const, amount: 0 }] : []
+
+    if (accountPayments.length > 0) {
+      if (!validatedData.customerId) {
+        return NextResponse.json(
+          { error: "Se requiere seleccionar un cliente para pagar con cuenta corriente" },
+          { status: 400 }
+        )
+      }
+
+      // Verify customer belongs to tenant
+      const customer = await prisma.customer.findFirst({
+        where: { id: validatedData.customerId, tenantId: user.tenantId },
+      })
+      if (!customer) {
+        return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 })
+      }
+    }
+
     // Create sale with items and payments in a transaction
     console.log("[SALES API] Starting transaction")
     const sale = await prisma.$transaction(async (tx) => {
       console.log("[SALES API TX] Generating sale number")
-      // Generate sale number
-      const lastSale = await tx.sale.findFirst({
-        where: { tenantId: user.tenantId },
-        orderBy: { createdAt: "desc" },
-      })
-      const nextNumber = lastSale ? parseInt(lastSale.saleNumber.split("-")[1]) + 1 : 1
+      // Generate sale number atomically by querying MAX inside the transaction
+      const maxResult = await tx.$queryRaw<{ max_num: string | null }[]>`
+        SELECT MAX(CAST(SPLIT_PART("saleNumber", '-', 2) AS INTEGER)) AS max_num
+        FROM "Sale"
+        WHERE "tenantId" = ${user.tenantId}
+          AND "saleNumber" LIKE 'SALE-%'
+      `
+      const maxNum = maxResult[0]?.max_num ? parseInt(String(maxResult[0].max_num)) : 0
+      const nextNumber = maxNum + 1
       const saleNumber = `SALE-${nextNumber.toString().padStart(6, "0")}`
       console.log("[SALES API TX] Sale number:", saleNumber)
 
@@ -190,10 +247,36 @@ export async function POST(req: Request) {
             throw new Error(`Insufficient stock for product ${product.name}`)
           }
 
-          // Calculate item totals
-          const itemSubtotal = item.unitPrice * item.quantity
-          const itemTaxAmount = (itemSubtotal * item.taxRate) / 100
-          const itemTotal = itemSubtotal + itemTaxAmount
+          // Calculate item totals applying item-level discount.
+          // In Argentina, salePrice is tax-INCLUSIVE (precio con IVA incluido).
+          // The taxRate is stored for accounting breakdown only — it must NOT be
+          // added on top of the price.  We extract the implicit tax portion:
+          //   taxAmount = total * taxRate / (100 + taxRate)
+          //   subtotal  = total - taxAmount  (net/neto)
+
+          // Support both legacy (discount percentage) and new (discountType + discountValue)
+          let itemDiscountAmount = 0
+          let itemDiscountType: DiscountType = "FIXED"
+          let itemDiscountValue = 0
+
+          if (item.discountType && item.discountValue !== undefined) {
+            // New flexible discount system
+            itemDiscountType = item.discountType as DiscountType
+            itemDiscountValue = item.discountValue
+            const basePrice = item.unitPrice * item.quantity
+            itemDiscountAmount = calculateDiscountAmount(basePrice, itemDiscountType, itemDiscountValue)
+          } else if (item.discount && item.discount > 0) {
+            // Legacy percentage discount
+            itemDiscountType = "PERCENTAGE"
+            itemDiscountValue = item.discount
+            const basePrice = item.unitPrice * item.quantity
+            itemDiscountAmount = calculateDiscountAmount(basePrice, "PERCENTAGE", item.discount)
+          }
+
+          const baseItemTotal = item.unitPrice * item.quantity
+          const itemTotal = baseItemTotal - itemDiscountAmount
+          const itemTaxAmount = (itemTotal * item.taxRate) / (100 + item.taxRate)
+          const itemSubtotal = itemTotal - itemTaxAmount
 
           subtotal += itemSubtotal
           taxAmount += itemTaxAmount
@@ -202,24 +285,65 @@ export async function POST(req: Request) {
             productId: item.productId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
+            costPrice: product.costPrice ?? null,
             subtotal: itemSubtotal,
             taxRate: item.taxRate,
             taxAmount: itemTaxAmount,
             total: itemTotal,
-            discount: 0,
+            discount: item.discount ?? 0, // Keep for legacy compatibility
+            discountType: itemDiscountType,
+            discountValue: itemDiscountValue,
           }
         })
       )
 
-      const total = subtotal + taxAmount
+      // Apply cart-level discount.
+      // Support both legacy (discountAmount) and new (discountType + discountValue)
+      let cartDiscountAmount = 0
+      let cartDiscountType: DiscountType = "FIXED"
+      let cartDiscountValue = 0
+
+      if (validatedData.discountType && validatedData.discountValue !== undefined) {
+        // New flexible discount system
+        cartDiscountType = validatedData.discountType as DiscountType
+        cartDiscountValue = validatedData.discountValue
+        const baseTotal = subtotal + taxAmount
+        cartDiscountAmount = calculateDiscountAmount(baseTotal, cartDiscountType, cartDiscountValue)
+      } else if (validatedData.discountAmount && validatedData.discountAmount > 0) {
+        // Legacy fixed amount discount
+        cartDiscountType = "FIXED"
+        cartDiscountValue = validatedData.discountAmount
+        cartDiscountAmount = validatedData.discountAmount
+      }
+
+      // grossTotal is the amount the customer actually pays (tax-inclusive, after discounts)
+      const grossTotal = (subtotal + taxAmount) - cartDiscountAmount
+      // Re-derive the net subtotal after discount, scaling proportionally by gross
+      const grossBeforeDiscount = subtotal + taxAmount
+      const discountRatio = grossBeforeDiscount > 0 ? grossTotal / grossBeforeDiscount : 1
+      const adjustedTaxAmount = taxAmount * discountRatio
+      const total = grossTotal
+
+      // Resolve payments array (legacy compat: single paymentMethod wraps into full amount)
+      const resolvedPayments = rawPayments ?? [{ method: legacyMethod!, amount: total }]
+
+      // Validate that payments sum equals the sale total (within $0.01 rounding tolerance)
+      const paymentsSum = resolvedPayments.reduce((s, p) => s + p.amount, 0)
+      if (Math.abs(paymentsSum - total) > 0.01) {
+        throw new Error(
+          `PAYMENTS_MISMATCH:La suma de pagos ($${paymentsSum.toFixed(2)}) no coincide con el total ($${total.toFixed(2)})`
+        )
+      }
 
       // Create sale
       const newSale = await tx.sale.create({
         data: {
           saleNumber,
           subtotal,
-          taxAmount,
-          discountAmount: 0,
+          taxAmount: adjustedTaxAmount,
+          discountAmount: cartDiscountAmount,
+          discountType: cartDiscountType,
+          discountValue: cartDiscountValue,
           total,
           status: "COMPLETED",
           tenantId: user.tenantId,
@@ -231,10 +355,15 @@ export async function POST(req: Request) {
             create: itemsData,
           },
           payments: {
-            create: {
-              amount: total,
-              method: validatedData.paymentMethod,
-            },
+            create: resolvedPayments.map(p => ({
+              amount: p.amount,
+              method: p.method,
+              reference: p.cardLastFour
+                ? `card:${p.cardLastFour}`
+                : p.transferReference
+                  ? `ref:${p.transferReference}`
+                  : undefined,
+            })),
           },
         },
         include: {
@@ -277,6 +406,65 @@ export async function POST(req: Request) {
         })
       }
 
+      // Handle ACCOUNT payment(s): charge to customer's current account
+      const accountEntries = resolvedPayments.filter(p => p.method === "ACCOUNT")
+      if (accountEntries.length > 0 && validatedData.customerId) {
+        // Get or create account
+        let account = await tx.customerAccount.findUnique({
+          where: { customerId: validatedData.customerId },
+        })
+
+        if (!account) {
+          account = await tx.customerAccount.create({
+            data: {
+              customerId: validatedData.customerId,
+              tenantId: user.tenantId,
+            },
+          })
+        }
+
+        if (!account.isActive) {
+          throw new Error("ACCOUNT_INACTIVE")
+        }
+
+        // Sum all ACCOUNT entries
+        const accountTotal = accountEntries.reduce((s, p) => s + p.amount, 0)
+        const creditLimit = new Decimal(account.creditLimit)
+        const currentBalance = new Decimal(account.balance)
+        const accountTotalDec = new Decimal(accountTotal)
+
+        if (creditLimit.greaterThan(0)) {
+          const newBalanceAfterCharge = currentBalance.minus(accountTotalDec)
+          if (newBalanceAfterCharge.lessThan(creditLimit.negated())) {
+            throw new Error("CREDIT_LIMIT_EXCEEDED")
+          }
+        }
+
+        const balanceBefore = account.balance
+        const newBalance = new Decimal(balanceBefore).minus(accountTotalDec)
+
+        // Update account balance
+        await tx.customerAccount.update({
+          where: { id: account.id },
+          data: { balance: newBalance },
+        })
+
+        // Create movement record
+        await tx.customerAccountMovement.create({
+          data: {
+            type: "CHARGE",
+            amount: accountTotalDec,
+            concept: `Venta ${saleNumber}`,
+            balanceBefore,
+            balanceAfter: newBalance,
+            customerAccountId: account.id,
+            saleId: newSale.id,
+            tenantId: user.tenantId,
+            userId: user.id,
+          },
+        })
+      }
+
       return newSale
     }, {
       maxWait: 30000, // 30 seconds max wait to acquire a connection
@@ -294,8 +482,29 @@ export async function POST(req: Request) {
       )
     }
 
+    if (error instanceof Error) {
+      if (error.message === "ACCOUNT_INACTIVE") {
+        return NextResponse.json(
+          { error: "La cuenta corriente del cliente está inactiva" },
+          { status: 400 }
+        )
+      }
+      if (error.message === "CREDIT_LIMIT_EXCEEDED") {
+        return NextResponse.json(
+          { error: "La venta supera el límite de crédito del cliente" },
+          { status: 400 }
+        )
+      }
+      if (error.message.startsWith("PAYMENTS_MISMATCH:")) {
+        return NextResponse.json(
+          { error: error.message.slice("PAYMENTS_MISMATCH:".length) },
+          { status: 400 }
+        )
+      }
+    }
+
     return NextResponse.json(
-      { error: error.message || "Internal server error" },
+      { error: (error as any).message || "Internal server error" },
       { status: 500 }
     )
   }

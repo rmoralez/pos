@@ -40,6 +40,9 @@ export async function GET(
         category: true,
         supplier: true,
         stock: true,
+        alternativeCodes: {
+          orderBy: { createdAt: "asc" },
+        },
       },
     })
 

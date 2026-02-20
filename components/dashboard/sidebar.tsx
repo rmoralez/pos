@@ -13,6 +13,10 @@ import {
   BarChart3,
   Settings,
   Store,
+  Banknote,
+  FolderOpen,
+  FileText,
+  CreditCard,
 } from "lucide-react"
 
 const navigation = [
@@ -20,10 +24,13 @@ const navigation = [
   { name: "Productos", href: "/dashboard/products", icon: Package },
   { name: "Stock", href: "/dashboard/stock", icon: Boxes },
   { name: "Ventas", href: "/dashboard/sales", icon: Receipt },
+  { name: "Presupuestos", href: "/dashboard/quotes", icon: FileText },
   { name: "Caja", href: "/dashboard/cash", icon: DollarSign },
+  { name: "Caja Chica", href: "/dashboard/petty-cash", icon: Banknote },
+  { name: "Cuentas", href: "/dashboard/cash-accounts", icon: FolderOpen },
+  { name: "Ctas. Corrientes", href: "/dashboard/accounts", icon: CreditCard },
   { name: "Clientes", href: "/dashboard/customers", icon: Users },
-  { name: "Facturas", href: "/dashboard/invoices", icon: Receipt },
-  { name: "Reportes", href: "/dashboard/reports", icon: BarChart3 },
+  { name: "P&L / Resultado", href: "/dashboard/reports/profit-loss", icon: BarChart3 },
   { name: "Configuración", href: "/dashboard/settings", icon: Settings },
 ]
 
@@ -42,7 +49,7 @@ export function Sidebar() {
         <div className="flex-1 flex flex-col overflow-y-auto">
           <nav className="flex-1 px-2 py-4 space-y-1">
             {navigation.map((item) => {
-              const isActive = pathname === item.href
+              const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
               return (
                 <Link
                   key={item.name}

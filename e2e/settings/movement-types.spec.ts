@@ -1,4 +1,7 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, request } from '@playwright/test';
+
+// Names of seeded types that must be preserved
+const SEED_NAMES = ['Ingreso General', 'Egreso General', 'Venta productos usados', 'Retiro efectivo'];
 
 test.describe('Movement Types Management', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,14 +12,25 @@ test.describe('Movement Types Management', () => {
     await page.click('button[type="submit"]');
 
     // Wait for redirect to dashboard
-    await page.waitForURL('**/dashboard/**');
+    await page.waitForURL('**/dashboard**');
+
+    // Clean up any test-created movement types from previous runs
+    const response = await page.request.get('/api/movement-types');
+    if (response.ok()) {
+      const types = await response.json();
+      for (const t of types) {
+        if (!SEED_NAMES.includes(t.name)) {
+          await page.request.delete(`/api/movement-types/${t.id}`);
+        }
+      }
+    }
 
     // Navigate to settings
     await page.goto('/dashboard/settings');
     await page.waitForLoadState('networkidle');
 
     // Click on Movement Types tab
-    await page.click('button[value="movement-types"]');
+    await page.getByRole('tab', { name: 'Tipos de Movimiento' }).click();
     await page.waitForTimeout(500);
   });
 
@@ -112,8 +126,8 @@ test.describe('Movement Types Management', () => {
     const row = page.locator('tr', { has: page.getByText('Tipo para Desactivar') });
     await row.getByRole('button').nth(0).click(); // Edit button
 
-    // Uncheck the active checkbox
-    await page.click('input#isActive');
+    // Uncheck the active checkbox (Radix Checkbox renders as button, not input)
+    await page.click('#isActive');
 
     // Save
     await page.click('button:has-text("Actualizar")');
@@ -223,8 +237,9 @@ test.describe('Movement Types Management', () => {
     await expect(page.getByText('Tipo creado')).toBeVisible({ timeout: 5000 });
 
     // Verify they appear in correct sections
-    const incomeSection = page.locator('div').filter({ hasText: 'Tipos de Ingreso' }).locator('..');
-    const expenseSection = page.locator('div').filter({ hasText: 'Tipos de Egreso' }).locator('..');
+    // Use heading role to locate the card, then go up to the Card container
+    const incomeSection = page.getByRole('heading', { name: 'Tipos de Ingreso', level: 3 }).locator('../../..');
+    const expenseSection = page.getByRole('heading', { name: 'Tipos de Egreso', level: 3 }).locator('../../..');
 
     await expect(incomeSection.getByText('Test Income Type')).toBeVisible();
     await expect(expenseSection.getByText('Test Expense Type')).toBeVisible();

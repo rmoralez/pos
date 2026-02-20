@@ -59,6 +59,7 @@ interface Tenant {
   city: string | null
   province: string | null
   zipCode: string | null
+  defaultTaxRate: number | null
   afipPuntoVenta: number | null
   _count: {
     users: number
@@ -122,6 +123,7 @@ export default function SettingsPage() {
     city: "",
     province: "",
     zipCode: "",
+    defaultTaxRate: "21",
     afipPuntoVenta: "",
   })
 
@@ -161,6 +163,7 @@ export default function SettingsPage() {
         city: data.city || "",
         province: data.province || "",
         zipCode: data.zipCode || "",
+        defaultTaxRate: data.defaultTaxRate?.toString() ?? "21",
         afipPuntoVenta: data.afipPuntoVenta?.toString() || "",
       })
     } catch (error) {
@@ -597,6 +600,35 @@ export default function SettingsPage() {
                 </div>
               </div>
 
+              {/* Tax Configuration */}
+              <div className="pt-4 border-t">
+                <p className="text-sm font-semibold mb-3">Configuración Impositiva</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="defaultTaxRate">IVA por defecto (%)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="defaultTaxRate"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={tenantForm.defaultTaxRate}
+                        onChange={(e) =>
+                          setTenantForm({ ...tenantForm, defaultTaxRate: e.target.value })
+                        }
+                        className="w-32"
+                        placeholder="21"
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Tasa de IVA aplicada por defecto a nuevos productos (ej: 21, 10.5, 0)
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex justify-end">
                 <Button onClick={handleSaveTenant}>
                   <Save className="mr-2 h-4 w-4" />
@@ -946,14 +978,14 @@ export default function SettingsPage() {
             <div className="grid gap-2">
               <Label htmlFor="userLocation">Ubicación</Label>
               <Select
-                value={userForm.locationId}
-                onValueChange={(value) => setUserForm({ ...userForm, locationId: value })}
+                value={userForm.locationId || "none"}
+                onValueChange={(value) => setUserForm({ ...userForm, locationId: value === "none" ? "" : value })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona una ubicación" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Ninguna</SelectItem>
+                  <SelectItem value="none">Ninguna</SelectItem>
                   {locations.map((location) => (
                     <SelectItem key={location.id} value={location.id}>
                       {location.name}

@@ -74,6 +74,28 @@ export async function POST(req: Request) {
         },
       })
 
+      // Create default movement types for the new tenant
+      await tx.movementType.createMany({
+        data: [
+          {
+            name: "Ingreso General",
+            description: "Ingreso de efectivo",
+            transactionType: "INCOME",
+            isSystem: true,
+            isActive: true,
+            tenantId: tenant.id,
+          },
+          {
+            name: "Egreso General",
+            description: "Egreso de efectivo",
+            transactionType: "EXPENSE",
+            isSystem: true,
+            isActive: true,
+            tenantId: tenant.id,
+          },
+        ],
+      })
+
       return { tenant, location, user }
     })
 

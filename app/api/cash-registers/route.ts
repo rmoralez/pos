@@ -99,9 +99,27 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    if (!user) {
+    const sessionUser = await getCurrentUser()
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Validate user still exists in DB (JWT may be stale)
+    const dbUser = await prisma.user.findUnique({
+      where: { id: sessionUser.id },
+      select: { id: true, tenantId: true, locationId: true, isActive: true },
+    })
+
+    if (!dbUser || !dbUser.isActive) {
+      return NextResponse.json({ error: "User not found or inactive" }, { status: 401 })
+    }
+
+    // Use DB values, not JWT values (JWT may be stale after DB changes)
+    const user = {
+      ...sessionUser,
+      id: dbUser.id,
+      tenantId: dbUser.tenantId,
+      locationId: dbUser.locationId,
     }
 
     const body = await request.json()
@@ -125,7 +143,6 @@ export async function POST(request: NextRequest) {
             tenantId: user.tenantId,
             name: "Sucursal Principal",
             address: "",
-            isMain: true,
           },
         })
         locationId = newLocation.id

@@ -4,9 +4,9 @@ import { prisma } from "@/lib/db"
 import { z } from "zod"
 
 const cashTransactionSchema = z.object({
-  type: z.enum(["INCOME", "EXPENSE"]),
+  movementTypeId: z.string(),
   amount: z.number().positive(),
-  reason: z.string().min(1),
+  reason: z.string().optional(),
   reference: z.string().optional(),
 })
 
@@ -43,12 +43,28 @@ export async function POST(
       )
     }
 
+    // Verify movement type exists and belongs to tenant
+    const movementType = await prisma.movementType.findFirst({
+      where: {
+        id: data.movementTypeId,
+        tenantId: user.tenantId,
+        isActive: true,
+      },
+    })
+
+    if (!movementType) {
+      return NextResponse.json(
+        { error: "Movement type not found or inactive" },
+        { status: 404 }
+      )
+    }
+
     // Create transaction
     const transaction = await prisma.cashTransaction.create({
       data: {
         cashRegisterId: params.id,
         userId: user.id,
-        type: data.type,
+        movementTypeId: data.movementTypeId,
         amount: data.amount,
         reason: data.reason,
         reference: data.reference,
@@ -58,6 +74,13 @@ export async function POST(
           select: {
             id: true,
             name: true,
+          },
+        },
+        movementType: {
+          select: {
+            id: true,
+            name: true,
+            transactionType: true,
           },
         },
       },
@@ -119,6 +142,13 @@ export async function GET(
           select: {
             id: true,
             name: true,
+          },
+        },
+        movementType: {
+          select: {
+            id: true,
+            name: true,
+            transactionType: true,
           },
         },
       },

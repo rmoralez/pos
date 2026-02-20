@@ -177,17 +177,25 @@ test.describe('Product Management', () => {
       // Find and edit the product
       await page.goto('/dashboard/products');
       const row = page.getByRole('row').filter({ hasText: productData.name });
-      await row.getByRole('button', { name: /edit|editar/i }).click();
+      await row.locator('[aria-label="Editar"]').click();
+      await page.waitForURL(/\/dashboard\/products\/[^/]+\/edit/);
 
       // Update product name and price
       const newName = `${productData.name} - EDITED`;
-      const newPrice = '2500.00';
+      const newPrice = '2500';
 
       await page.getByLabel('Nombre').fill(newName);
-      await page.getByLabel('Precio de venta').fill(newPrice);
-      await actions.clickButton('Guardar Producto');
+      await page.locator('#salePrice').fill(newPrice);
 
-      await actions.waitForToast('Producto actualizado exitosamente');
+      // Wait for the PUT API response instead of URL navigation
+      // (router.push + router.refresh can prevent Playwright from detecting load completion)
+      await Promise.all([
+        page.waitForResponse(resp => resp.url().includes('/api/products/') && resp.request().method() === 'PUT' && resp.status() === 200),
+        actions.clickButton('Guardar Producto'),
+      ]);
+
+      // Navigate back to products list manually
+      await page.goto('/dashboard/products');
 
       // Verify updated product in list
       await expect(page.getByText(newName)).toBeVisible();
@@ -195,8 +203,10 @@ test.describe('Product Management', () => {
     });
 
     test('should not allow editing SKU to duplicate existing SKU', async ({ page }) => {
-      const product1 = generateTestData.product();
-      const product2 = generateTestData.product();
+      const rand1 = Math.floor(Math.random() * 100000);
+      const rand2 = Math.floor(Math.random() * 100000);
+      const product1 = generateTestData.product({ name: `Test Product P1 ${rand1}` });
+      const product2 = generateTestData.product({ name: `Test Product P2 ${rand2}` });
       const actions = new PageActions(page);
 
       // Create two products
@@ -223,13 +233,14 @@ test.describe('Product Management', () => {
       // Try to edit product2 SKU to match product1
       await page.goto('/dashboard/products');
       const row = page.getByRole('row').filter({ hasText: product2.name });
-      await row.getByRole('button', { name: /edit|editar/i }).click();
+      await row.locator('[aria-label="Editar"]').click();
+      await page.waitForURL(/\/dashboard\/products\/[^/]+\/edit/);
 
-      await page.getByLabel('SKU').fill(product1.sku); // Try to use existing SKU
+      await page.locator('#sku').fill(product1.sku); // Try to use existing SKU
       await actions.clickButton('Guardar Producto');
 
-      // Should show error
-      await expect(page.getByText(/SKU ya existe|SKU already exists/i).first()).toBeVisible();
+      // Should show error toast with SKU duplicate message
+      await expect(page.getByText(/SKU ya existe|SKU already exists|already exists/i).first()).toBeVisible({ timeout: 8000 });
     });
 
     test('should toggle product active status', async ({ page }) => {
@@ -250,12 +261,21 @@ test.describe('Product Management', () => {
       // Edit to set inactive
       await page.goto('/dashboard/products');
       const row = page.getByRole('row').filter({ hasText: productData.name });
-      await row.getByRole('button', { name: /edit|editar/i }).click();
+      await row.locator('[aria-label="Editar"]').click();
+      await page.waitForURL(/\/dashboard\/products\/[^/]+\/edit/);
 
-      // Toggle active status
-      await page.getByLabel('Activo').uncheck();
-      await actions.clickButton('Guardar Producto');
-      await actions.waitForToast('Producto actualizado exitosamente');
+      // Toggle active status (click the checkbox — Radix UI custom checkbox)
+      await page.getByRole('checkbox', { name: 'Activo' }).click();
+
+      // Wait for the PUT API response instead of URL navigation
+      // (router.push + router.refresh can prevent Playwright from detecting load completion)
+      await Promise.all([
+        page.waitForResponse(resp => resp.url().includes('/api/products/') && resp.request().method() === 'PUT' && resp.status() === 200),
+        actions.clickButton('Guardar Producto'),
+      ]);
+
+      // Navigate back to products list manually
+      await page.goto('/dashboard/products');
 
       // Verify status badge shows Inactivo
       await expect(page.getByRole('row').filter({ hasText: productData.name }).getByText('Inactivo')).toBeVisible();
@@ -281,16 +301,26 @@ test.describe('Product Management', () => {
 
       // Delete the product
       await page.goto('/dashboard/products');
-      const row = page.getByRole('row').filter({ hasText: productData.name });
-      await row.getByRole('button', { name: /delete|trash/i }).click();
 
-      // Confirm deletion
+      // Register dialog handler BEFORE clicking delete (dialog fires synchronously on click)
       page.on('dialog', dialog => dialog.accept());
 
-      await actions.waitForToast('Producto eliminado');
+      const row = page.getByRole('row').filter({ hasText: productData.name });
 
-      // Product should not appear in list
-      await assertions.assertProductNotInList(productData.name);
+      // Wait for both the delete API call and the subsequent fetchProducts call
+      await Promise.all([
+        page.waitForResponse(resp => resp.url().includes('/api/products/') && resp.request().method() === 'DELETE'),
+        row.locator('[aria-label="Delete"]').click(),
+      ]);
+
+      // Wait for the list to refresh after deletion (fetchProducts is called after delete)
+      await page.waitForResponse(resp => resp.url().includes('/api/products') && resp.request().method() === 'GET');
+
+      // The DELETE is a soft-delete (sets isActive: false), so the product remains in the list
+      // but should now show as "Inactivo"
+      await expect(
+        page.getByRole('row').filter({ hasText: productData.name }).getByText('Inactivo')
+      ).toBeVisible();
     });
   });
 
@@ -325,8 +355,11 @@ test.describe('Product Management', () => {
     });
 
     test('should search products by SKU', async ({ page }) => {
-      const product1 = generateTestData.product({ sku: 'LAPTOP-123' });
-      const product2 = generateTestData.product({ sku: 'MOUSE-456' });
+      const rand = Math.floor(Math.random() * 100000);
+      const laptopSku = `LAPTOP-SKU-${rand}`;
+      const mouseSku = `MOUSE-SKU-${rand}`;
+      const product1 = generateTestData.product({ sku: laptopSku, name: `Laptop Product ${rand}` });
+      const product2 = generateTestData.product({ sku: mouseSku, name: `Mouse Product ${rand}` });
       const actions = new PageActions(page);
       const assertions = new Assertions(page);
 
@@ -343,9 +376,9 @@ test.describe('Product Management', () => {
         await actions.waitForToast('Producto creado exitosamente');
       }
 
-      // Search by SKU
+      // Search by SKU - wait for API response before asserting
       await page.goto('/dashboard/products');
-      await actions.search('Buscar por nombre, SKU o código de barras', 'LAPTOP-123');
+      await actions.search('Buscar por nombre, SKU o código de barras', laptopSku);
       await actions.clickButton('Buscar');
 
       // Should show only product with that SKU

@@ -31,11 +31,43 @@ export async function GET(req: Request) {
     const search = searchParams.get("search") || ""
     const category = searchParams.get("category")
     const isActive = searchParams.get("isActive")
+    const ids = searchParams.get("ids")
+    const barcode = searchParams.get("barcode")  // exact barcode match for scanner
+    const idList = ids ? ids.split(",").filter(Boolean) : null
+
+    // Barcode exact-match mode: find by Product.barcode OR ProductAlternativeCode.code
+    if (barcode) {
+      const products = await prisma.product.findMany({
+        where: {
+          tenantId: user.tenantId,
+          ...(isActive !== null && { isActive: isActive === "true" }),
+          OR: [
+            { barcode: barcode },
+            {
+              alternativeCodes: {
+                some: { code: barcode },
+              },
+            },
+          ],
+        },
+        include: {
+          category: true,
+          supplier: true,
+          stock: {
+            where: user.locationId ? { locationId: user.locationId } : undefined,
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+      // Return wrapped in { products } so the caller can distinguish from regular search
+      return NextResponse.json({ products })
+    }
 
     const products = await prisma.product.findMany({
       where: {
         tenantId: user.tenantId,
-        ...(search && {
+        ...(idList && idList.length > 0 && { id: { in: idList } }),
+        ...(!idList && search && {
           OR: [
             { name: { contains: search, mode: "insensitive" } },
             { sku: { contains: search, mode: "insensitive" } },
@@ -127,7 +159,6 @@ export async function POST(req: Request) {
                 tenantId: user.tenantId,
                 name: "Sucursal Principal",
                 address: "",
-                isMain: true,
               },
             })
           }

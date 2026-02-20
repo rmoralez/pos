@@ -191,7 +191,7 @@ export default function ProductsPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        ${product.salePrice.toLocaleString("es-AR")}
+                        ${Number(product.salePrice).toLocaleString("es-AR")}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge
@@ -208,13 +208,14 @@ export default function ProductsPage() {
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Link href={`/dashboard/products/${product.id}/edit`}>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" aria-label="Editar">
                               <Pencil className="h-4 w-4" />
                             </Button>
                           </Link>
                           <Button
                             variant="ghost"
                             size="icon"
+                            aria-label="Delete"
                             onClick={() => handleDelete(product.id)}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />

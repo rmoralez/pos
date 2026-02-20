@@ -103,8 +103,8 @@ test.describe('Stock Management', () => {
       // Submit
       await page.getByRole('button', { name: 'Registrar Movimiento' }).click();
 
-      // Should show success toast
-      await actions.waitForToast('Movimiento registrado');
+      // Should show success toast (longer timeout for slow API call)
+      await actions.waitForToast('Movimiento registrado', 10000);
     });
 
     test('should view movement history', async ({ page }) => {

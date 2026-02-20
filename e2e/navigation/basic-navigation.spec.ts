@@ -19,7 +19,7 @@ test.describe('Basic Navigation', () => {
 
       for (const item of menuItems) {
         // Click on menu item
-        await page.getByRole('link', { name: item.name }).click();
+        await page.getByRole('link', { name: item.name, exact: true }).click();
 
         // Wait for navigation
         await page.waitForURL(item.url, { timeout: 10000 });

@@ -61,6 +61,7 @@ export async function GET(
                 name: true,
               },
             },
+            movementType: true,
           },
           orderBy: {
             createdAt: "desc",
@@ -76,28 +77,58 @@ export async function GET(
       )
     }
 
-    // Calculate totals
-    const salesTotal = cashRegister.sales
-      .filter((s) => s.status === "COMPLETED")
-      .reduce((sum, s) => sum + Number(s.total), 0)
+    const completedSales = cashRegister.sales.filter((s) => s.status === "COMPLETED")
 
+    // Build per-method payment breakdown (all methods for reconciliation)
+    const paymentBreakdown: Record<string, number> = {
+      CASH: 0,
+      DEBIT_CARD: 0,
+      CREDIT_CARD: 0,
+      QR: 0,
+      TRANSFER: 0,
+      ACCOUNT: 0,
+      CHECK: 0,
+      OTHER: 0,
+    }
+
+    for (const sale of completedSales) {
+      for (const p of sale.payments) {
+        const method = p.method as string
+        if (method in paymentBreakdown) {
+          paymentBreakdown[method] += Number(p.amount)
+        } else {
+          paymentBreakdown.OTHER += Number(p.amount)
+        }
+      }
+    }
+
+    // Total fiscal sales (all payment methods)
+    const salesFiscalTotal = Object.values(paymentBreakdown).reduce((a, b) => a + b, 0)
+
+    // Cash-only: physical cash that entered the register
+    const cashSalesTotal = paymentBreakdown.CASH
+
+    // Only count transactions with a valid movementType (avoids phantom amounts)
     const incomes = cashRegister.transactions
-      .filter((t) => t.type === "INCOME")
+      .filter((t) => t.movementType?.transactionType === "INCOME")
       .reduce((sum, t) => sum + Number(t.amount), 0)
 
     const expenses = cashRegister.transactions
-      .filter((t) => t.type === "EXPENSE")
+      .filter((t) => t.movementType?.transactionType === "EXPENSE")
       .reduce((sum, t) => sum + Number(t.amount), 0)
 
+    // Calculated balance = physical cash only
     const calculatedBalance =
-      Number(cashRegister.openingBalance) + salesTotal + incomes - expenses
+      Number(cashRegister.openingBalance) + cashSalesTotal + incomes - expenses
 
     return NextResponse.json({
       ...cashRegister,
-      salesTotal,
+      salesTotal: cashSalesTotal,     // CASH sales only (affects register balance)
+      salesFiscalTotal,               // All payment methods combined (fiscal total)
+      paymentBreakdown,               // Per-method for reconciliation
       incomes,
       expenses,
-      calculatedBalance,
+      calculatedBalance,              // Physical cash balance
     })
   } catch (error) {
     console.error("Error fetching cash register:", error)

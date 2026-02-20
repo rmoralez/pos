@@ -4,13 +4,21 @@ import { prisma } from "@/lib/db"
 import { z } from "zod"
 
 const closeCashRegisterSchema = z.object({
-  closingBalance: z.number().min(0),
+  closingBalance: z.number().min(0).optional(),
+  finalBalance: z.number().min(0).optional(),
   notes: z.string().optional(),
-})
+}).transform((data) => ({
+  closingBalance: data.closingBalance ?? data.finalBalance ?? 0,
+  notes: data.notes,
+}))
 
 /**
  * POST /api/cash-registers/[id]/close
  * Close a cash register
+ *
+ * expectedBalance and difference only account for physical CASH (Efectivo).
+ * Card / QR / Transfer / Account payments are settled externally and never
+ * enter the physical register — they appear in paymentBreakdown for reference.
  */
 export async function POST(
   request: NextRequest,
@@ -36,8 +44,17 @@ export async function POST(
           where: {
             status: "COMPLETED",
           },
+          include: {
+            payments: {
+              select: { method: true, amount: true },
+            },
+          },
         },
-        transactions: true,
+        transactions: {
+          include: {
+            movementType: true,
+          },
+        },
       },
     })
 
@@ -55,20 +72,47 @@ export async function POST(
       )
     }
 
-    // Calculate expected balance
-    const salesTotal = cashRegister.sales.reduce(
-      (sum, s) => sum + Number(s.total),
-      0
-    )
+    // Build per-method payment breakdown (for reporting purposes)
+    const paymentBreakdown: Record<string, number> = {
+      CASH: 0,
+      DEBIT_CARD: 0,
+      CREDIT_CARD: 0,
+      QR: 0,
+      TRANSFER: 0,
+      ACCOUNT: 0,
+      CHECK: 0,
+      OTHER: 0,
+    }
+
+    for (const sale of cashRegister.sales) {
+      for (const p of sale.payments) {
+        const method = p.method as string
+        if (method in paymentBreakdown) {
+          paymentBreakdown[method] += Number(p.amount)
+        } else {
+          paymentBreakdown.OTHER += Number(p.amount)
+        }
+      }
+    }
+
+    // Total fiscal sales (all payment methods — for informational display)
+    const salesFiscalTotal = Object.values(paymentBreakdown).reduce((a, b) => a + b, 0)
+
+    // Physical cash that entered the register: CASH sales only
+    const cashSalesTotal = paymentBreakdown.CASH
+
+    // Only count transactions with a valid movementType (avoids phantom amounts)
     const incomes = cashRegister.transactions
-      .filter((t) => t.type === "INCOME")
+      .filter((t) => t.movementType?.transactionType === "INCOME")
       .reduce((sum, t) => sum + Number(t.amount), 0)
     const expenses = cashRegister.transactions
-      .filter((t) => t.type === "EXPENSE")
+      .filter((t) => t.movementType?.transactionType === "EXPENSE")
       .reduce((sum, t) => sum + Number(t.amount), 0)
 
+    // Expected physical cash = opening + CASH sales + manual incomes - expenses
+    // (Cards/QR/Transfer never enter the drawer)
     const expectedBalance =
-      Number(cashRegister.openingBalance) + salesTotal + incomes - expenses
+      Number(cashRegister.openingBalance) + cashSalesTotal + incomes - expenses
 
     const difference = data.closingBalance - expectedBalance
 
@@ -112,7 +156,9 @@ export async function POST(
 
     return NextResponse.json({
       ...updated,
-      salesTotal,
+      salesTotal: cashSalesTotal,   // Physical cash from sales
+      salesFiscalTotal,             // All payment methods combined (fiscal)
+      paymentBreakdown,             // Per-method breakdown
       incomes,
       expenses,
     })
