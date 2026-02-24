@@ -181,6 +181,42 @@ async function main() {
     console.log(`✓ Product created: ${product.name} with stock: 50`)
   }
 
+  // Create cash accounts for payment methods
+  const cashAccounts = [
+    {
+      name: 'Efectivo',
+      description: 'Caja de efectivo principal',
+      type: 'CASH' as const,
+    },
+    {
+      name: 'Banco - Cuenta Corriente',
+      description: 'Cuenta corriente para débito y transferencias',
+      type: 'BANK' as const,
+    },
+    {
+      name: 'Tarjetas de Crédito',
+      description: 'Cuenta para acreditaciones de tarjetas de crédito',
+      type: 'BANK' as const,
+    },
+    {
+      name: 'Mercado Pago',
+      description: 'Cuenta de Mercado Pago para pagos QR',
+      type: 'BANK' as const,
+    },
+  ]
+
+  for (const accountData of cashAccounts) {
+    await prisma.cashAccount.create({
+      data: {
+        ...accountData,
+        currentBalance: 0,
+        tenantId: tenant.id,
+      },
+    })
+  }
+
+  console.log('✓ Cash accounts created:', cashAccounts.length)
+
   // Create a customer
   const customer = await prisma.customer.create({
     data: {
