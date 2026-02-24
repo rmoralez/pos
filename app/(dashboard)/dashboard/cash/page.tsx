@@ -120,7 +120,7 @@ export default function CashRegisterPage() {
     setTransferError("")
     try {
       const res = await fetch(
-        `/api/cash-registers/${currentCashRegister.id}/transfer-to-petty-cash`,
+        `/api/cash-registers/${currentCashRegister.id}/transfer-to-treasury`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -467,7 +467,7 @@ export default function CashRegisterPage() {
               Registrar Egreso
             </Button>
             <Button
-              className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
+              className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
               variant="outline"
               onClick={() => {
                 setTransferAmount("")
@@ -477,7 +477,7 @@ export default function CashRegisterPage() {
               }}
             >
               <Banknote className="mr-2 h-4 w-4" />
-              Enviar a Caja Chica
+              Enviar a Tesorería
             </Button>
             <Link href={`/dashboard/cash/${currentCashRegister.id}`} className="block">
               <Button className="w-full" variant="outline">
@@ -512,7 +512,7 @@ export default function CashRegisterPage() {
         </>
       )}
 
-      {/* Transfer to Petty Cash Dialog */}
+      {/* Transfer to Treasury Dialog */}
       <Dialog
         open={showTransferDialog}
         onOpenChange={(open) => {
@@ -521,9 +521,9 @@ export default function CashRegisterPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Enviar dinero a Caja Chica</DialogTitle>
+            <DialogTitle>Enviar dinero a Tesorería</DialogTitle>
             <DialogDescription>
-              El monto saldrá de la caja de ventas y se acreditará en la Caja Chica.
+              El monto saldrá de la caja de ventas y se acreditará en la cuenta de Efectivo de Tesorería.
               Ambos movimientos quedan registrados con el mismo ID de transferencia.
             </DialogDescription>
           </DialogHeader>
