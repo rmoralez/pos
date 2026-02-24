@@ -94,7 +94,7 @@ export function BillCounterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Calculator className="h-5 w-5" />
@@ -107,10 +107,10 @@ export function BillCounterDialog({
 
         <div className="space-y-4 py-4">
           {/* Summary at top */}
-          <div className="sticky top-0 bg-background z-10 rounded-lg border-2 border-primary bg-primary/5 p-4 mb-4">
+          <div className="sticky top-0 bg-background z-10 rounded-lg border-2 border-primary bg-primary/5 p-3 mb-3">
             <div className="flex justify-between items-center">
-              <span className="text-lg font-medium">Total Contado:</span>
-              <span className="text-3xl font-bold text-primary">
+              <span className="text-sm font-medium">Total Contado:</span>
+              <span className="text-2xl font-bold text-primary">
                 ${total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
@@ -118,12 +118,12 @@ export function BillCounterDialog({
 
           {/* Denominations Table */}
           <div className="border rounded-lg overflow-hidden">
-            <table className="w-full">
+            <table className="w-full text-sm">
               <thead className="bg-muted">
                 <tr>
-                  <th className="text-left p-3 font-semibold">Denominación</th>
-                  <th className="text-center p-3 font-semibold w-32">Cantidad</th>
-                  <th className="text-right p-3 font-semibold w-40">Subtotal</th>
+                  <th className="text-left p-2 font-semibold text-xs">Denominación</th>
+                  <th className="text-center p-2 font-semibold w-24 text-xs">Cantidad</th>
+                  <th className="text-right p-2 font-semibold w-32 text-xs">Subtotal</th>
                 </tr>
               </thead>
               <tbody>
@@ -141,27 +141,27 @@ export function BillCounterDialog({
                         count > 0 ? "bg-accent/20" : ""
                       }`}
                     >
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-lg">{denom.label}</span>
+                      <td className="p-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold">{denom.label}</span>
                           {isBigBill && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
                               Billete grande
                             </span>
                           )}
                           {isSmallBill && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">
                               Billete
                             </span>
                           )}
                           {isCoin && (
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
                               Moneda
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="p-3">
+                      <td className="p-2">
                         <Input
                           id={`denom-${denom.value}`}
                           type="number"
@@ -170,11 +170,11 @@ export function BillCounterDialog({
                           placeholder="0"
                           value={count || ""}
                           onChange={(e) => handleCountChange(denom.value, e.target.value)}
-                          className="text-center text-lg w-full"
+                          className="text-center h-8 w-full"
                         />
                       </td>
-                      <td className="p-3 text-right">
-                        <span className={`text-lg font-semibold ${subtotal > 0 ? "text-primary" : "text-muted-foreground"}`}>
+                      <td className="p-2 text-right">
+                        <span className={`font-semibold ${subtotal > 0 ? "text-primary" : "text-muted-foreground"}`}>
                           ${subtotal.toLocaleString("es-AR", {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
@@ -187,11 +187,11 @@ export function BillCounterDialog({
               </tbody>
               <tfoot className="bg-muted border-t-2">
                 <tr>
-                  <td colSpan={2} className="p-3 text-right font-bold text-lg">
+                  <td colSpan={2} className="p-2 text-right font-bold">
                     TOTAL:
                   </td>
-                  <td className="p-3 text-right">
-                    <span className="text-2xl font-bold text-primary">
+                  <td className="p-2 text-right">
+                    <span className="text-xl font-bold text-primary">
                       ${total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </td>
