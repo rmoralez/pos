@@ -1,17 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { Check, ChevronsUpDown, User } from "lucide-react"
+import { Check, ChevronsUpDown, User, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command"
+import { Input } from "@/components/ui/input"
 import {
   Popover,
   PopoverContent,
@@ -100,6 +93,16 @@ export function CustomerSelector({ value, onChange, disabled }: CustomerSelector
     return parts.join(" - ")
   }
 
+  const handleSelectCustomer = (customer: Customer) => {
+    onChange(customer)
+    setOpen(false)
+    setSearch("")
+  }
+
+  const handleClearCustomer = () => {
+    onChange(null)
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -118,63 +121,80 @@ export function CustomerSelector({ value, onChange, disabled }: CustomerSelector
               <span className="text-muted-foreground">Seleccionar cliente...</span>
             )}
           </div>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          {value ? (
+            <X
+              className="ml-2 h-4 w-4 shrink-0 opacity-50 hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleClearCustomer()
+              }}
+            />
+          ) : (
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[400px] p-0" align="start">
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder="Buscar por nombre, email, o documento..."
-            value={search}
-            onValueChange={setSearch}
-          />
-          <CommandList>
+        <div className="flex flex-col">
+          {/* Search Input */}
+          <div className="border-b p-3">
+            <Input
+              placeholder="Buscar por nombre, email, o documento..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9"
+              autoFocus
+            />
+          </div>
+
+          {/* Results List */}
+          <div className="max-h-[300px] overflow-y-auto">
             {loading ? (
               <div className="py-6 text-center text-sm text-muted-foreground">
                 Cargando clientes...
               </div>
+            ) : customers.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                {search ? "No se encontraron clientes." : "No hay clientes registrados."}
+              </div>
             ) : (
-              <>
-                <CommandEmpty>
-                  {search ? "No se encontraron clientes." : "No hay clientes registrados."}
-                </CommandEmpty>
-                <CommandGroup>
-                  {customers.map((customer) => (
-                    <CommandItem
-                      key={customer.id}
-                      value={customer.id}
-                      onSelect={() => {
-                        onChange(customer.id === value?.id ? null : customer)
-                        setOpen(false)
-                      }}
-                    >
-                      <Check
-                        className={cn(
-                          "mr-2 h-4 w-4",
-                          value?.id === customer.id ? "opacity-100" : "opacity-0"
+              <div className="p-1">
+                {customers.map((customer) => (
+                  <button
+                    key={customer.id}
+                    type="button"
+                    onClick={() => handleSelectCustomer(customer)}
+                    className={cn(
+                      "w-full flex items-start gap-2 px-3 py-2 rounded-md hover:bg-accent cursor-pointer text-left transition-colors",
+                      value?.id === customer.id && "bg-accent"
+                    )}
+                  >
+                    <Check
+                      className={cn(
+                        "mt-1 h-4 w-4 shrink-0",
+                        value?.id === customer.id ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <div className="font-medium truncate">{customer.name}</div>
+                      <div className="text-xs text-muted-foreground flex gap-2 flex-wrap">
+                        {customer.documentNumber && (
+                          <span>{customer.documentNumber}</span>
                         )}
-                      />
-                      <div className="flex flex-col flex-1 min-w-0">
-                        <div className="font-medium truncate">{customer.name}</div>
-                        <div className="text-xs text-muted-foreground flex gap-2">
-                          {customer.documentNumber && (
-                            <span>{customer.documentNumber}</span>
-                          )}
-                          {customer.email && (
-                            <span className="truncate">{customer.email}</span>
-                          )}
-                          {customer.phone && (
-                            <span>{customer.phone}</span>
-                          )}
-                        </div>
+                        {customer.email && (
+                          <span className="truncate">{customer.email}</span>
+                        )}
+                        {customer.phone && (
+                          <span>{customer.phone}</span>
+                        )}
                       </div>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </>
+                    </div>
+                  </button>
+                ))}
+              </div>
             )}
-          </CommandList>
-        </Command>
+          </div>
+        </div>
       </PopoverContent>
     </Popover>
   )
