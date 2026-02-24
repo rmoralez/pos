@@ -15,7 +15,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import { formatCurrency } from "@/lib/utils"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, Calculator } from "lucide-react"
+import { BillCounterDialog } from "./bill-counter-dialog"
 
 interface CloseCashRegisterDialogProps {
   open: boolean
@@ -35,6 +36,7 @@ export function CloseCashRegisterDialog({
   cashRegister,
 }: CloseCashRegisterDialogProps) {
   const [loading, setLoading] = useState(false)
+  const [showBillCounter, setShowBillCounter] = useState(false)
   const [formData, setFormData] = useState({
     closingBalance: "",
     notes: "",
@@ -43,6 +45,10 @@ export function CloseCashRegisterDialog({
   const expectedBalance = cashRegister.currentBalance || 0
   const closingBalance = parseFloat(formData.closingBalance) || 0
   const difference = closingBalance - expectedBalance
+
+  const handleBillCounterConfirm = (total: number) => {
+    setFormData({ ...formData, closingBalance: total.toFixed(2) })
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -108,20 +114,32 @@ export function CloseCashRegisterDialog({
 
             <div className="space-y-2">
               <Label htmlFor="closingBalance">Balance Final (Contado) *</Label>
-              <Input
-                id="closingBalance"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                value={formData.closingBalance}
-                onChange={(e) =>
-                  setFormData({ ...formData, closingBalance: e.target.value })
-                }
-                required
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="closingBalance"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={formData.closingBalance}
+                  onChange={(e) =>
+                    setFormData({ ...formData, closingBalance: e.target.value })
+                  }
+                  required
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowBillCounter(true)}
+                  className="shrink-0"
+                >
+                  <Calculator className="h-4 w-4 mr-2" />
+                  Contar
+                </Button>
+              </div>
               <p className="text-sm text-muted-foreground">
-                Cuenta el dinero físico en caja
+                Cuenta el dinero físico en caja o usa el contador de billetes
               </p>
             </div>
 
@@ -185,6 +203,13 @@ export function CloseCashRegisterDialog({
           </DialogFooter>
         </form>
       </DialogContent>
+
+      <BillCounterDialog
+        open={showBillCounter}
+        onOpenChange={setShowBillCounter}
+        onConfirm={handleBillCounterConfirm}
+        currentValue={closingBalance}
+      />
     </Dialog>
   )
 }
