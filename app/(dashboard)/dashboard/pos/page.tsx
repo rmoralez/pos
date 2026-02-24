@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Search, Plus, Minus, Trash2, ShoppingCart, DollarSign, AlertCircle, Tag, Pause } from "lucide-react"
+import { Search, Plus, Minus, Trash2, ShoppingCart, DollarSign, AlertCircle, Tag, Pause, Percent } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { PaymentDialog } from "@/components/pos/payment-dialog"
 import { KeyboardShortcutsHelp, KeyboardShortcutsTrigger } from "@/components/pos/keyboard-shortcuts-help"
@@ -850,14 +850,14 @@ export default function POSPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
-                            variant="outline"
+                            variant={hasItemDiscount ? "default" : "outline"}
                             size="icon"
                             onClick={() => handleOpenItemDiscount(index, item)}
                             aria-label="Discount"
                             title="Aplicar descuento"
-                            className={hasItemDiscount ? "bg-green-50 border-green-300 hover:bg-green-100" : ""}
+                            className={hasItemDiscount ? "bg-green-600 hover:bg-green-700" : "border-orange-300 hover:bg-orange-50"}
                           >
-                            <Tag className={`h-4 w-4 ${hasItemDiscount ? "text-green-600" : ""}`} />
+                            <Percent className={`h-4 w-4 ${hasItemDiscount ? "text-white" : "text-orange-600"}`} />
                           </Button>
                           <Button
                             variant="outline"
