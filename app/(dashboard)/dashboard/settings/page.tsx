@@ -44,12 +44,15 @@ import {
   Shield,
   ArrowRightLeft,
   CreditCard,
+  Folder,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { MovementTypesTab } from "@/components/settings/movement-types-tab"
 import { PaymentMethodAccountsTab } from "@/components/settings/payment-method-accounts-tab"
+import { CategoryTree, type Category } from "@/components/categories/category-tree"
+import { CategoryDialog } from "@/components/categories/category-dialog"
 
 interface Tenant {
   id: string
@@ -114,6 +117,7 @@ export default function SettingsPage() {
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [locations, setLocations] = useState<Location[]>([])
   const [users, setUsers] = useState<User[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   // Tenant form
@@ -150,6 +154,11 @@ export default function SettingsPage() {
     locationId: "",
     isActive: true,
   })
+
+  // Category dialog
+  const [showCategoryDialog, setShowCategoryDialog] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+  const [categoryParentId, setCategoryParentId] = useState<string | null>(null)
 
   const fetchTenant = useCallback(async () => {
     try {
@@ -207,14 +216,29 @@ export default function SettingsPage() {
     }
   }, [])
 
+  const fetchCategories = useCallback(async () => {
+    try {
+      const response = await fetch("/api/categories")
+      if (!response.ok) throw new Error("Failed to fetch categories")
+      const data = await response.json()
+      setCategories(data)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las categorías",
+        variant: "destructive",
+      })
+    }
+  }, [])
+
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true)
-      await Promise.all([fetchTenant(), fetchLocations(), fetchUsers()])
+      await Promise.all([fetchTenant(), fetchLocations(), fetchUsers(), fetchCategories()])
       setIsLoading(false)
     }
     loadData()
-  }, [fetchTenant, fetchLocations, fetchUsers])
+  }, [fetchTenant, fetchLocations, fetchUsers, fetchCategories])
 
   const handleSaveTenant = async () => {
     try {
@@ -463,6 +487,68 @@ export default function SettingsPage() {
     }
   }
 
+  // Category handlers
+  const handleEditCategory = (category: Category) => {
+    setEditingCategory(category)
+    setCategoryParentId(null)
+    setShowCategoryDialog(true)
+  }
+
+  const handleAddChildCategory = (parent: Category) => {
+    setEditingCategory(null)
+    setCategoryParentId(parent.id)
+    setShowCategoryDialog(true)
+  }
+
+  const handleAddRootCategory = () => {
+    setEditingCategory(null)
+    setCategoryParentId(null)
+    setShowCategoryDialog(true)
+  }
+
+  const handleDeleteCategory = async (category: Category) => {
+    if (category._count && category._count.products > 0) {
+      toast({
+        title: "No se puede eliminar",
+        description: `La categoría ${category.name} tiene productos asignados`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (category.children && category.children.length > 0) {
+      toast({
+        title: "No se puede eliminar",
+        description: `La categoría ${category.name} tiene subcategorías`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!confirm(`¿Estás seguro de eliminar la categoría ${category.name}?`)) return
+
+    try {
+      const response = await fetch(`/api/categories/${category.id}`, { method: "DELETE" })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || "Failed to delete category")
+      }
+
+      toast({
+        title: "Categoría eliminada",
+        description: "La categoría ha sido eliminada exitosamente",
+      })
+
+      fetchCategories()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "No se pudo eliminar la categoría",
+        variant: "destructive",
+      })
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -504,6 +590,10 @@ export default function SettingsPage() {
           <TabsTrigger value="payment-methods">
             <CreditCard className="mr-2 h-4 w-4" />
             Métodos de Pago
+          </TabsTrigger>
+          <TabsTrigger value="categories">
+            <Folder className="mr-2 h-4 w-4" />
+            Categorías
           </TabsTrigger>
           <TabsTrigger value="afip">
             <FileText className="mr-2 h-4 w-4" />
@@ -818,6 +908,34 @@ export default function SettingsPage() {
           <PaymentMethodAccountsTab />
         </TabsContent>
 
+        {/* Categories Tab */}
+        <TabsContent value="categories" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Categorías de Productos</CardTitle>
+                  <CardDescription>
+                    Organiza tus productos en categorías y subcategorías
+                  </CardDescription>
+                </div>
+                <Button onClick={handleAddRootCategory}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nueva Categoría
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CategoryTree
+                categories={categories}
+                onEdit={handleEditCategory}
+                onDelete={handleDeleteCategory}
+                onAddChild={handleAddChildCategory}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* AFIP Tab */}
         <TabsContent value="afip" className="space-y-4">
           <Card>
@@ -1028,6 +1146,22 @@ export default function SettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Category Dialog */}
+      <CategoryDialog
+        open={showCategoryDialog}
+        onClose={() => {
+          setShowCategoryDialog(false)
+          setEditingCategory(null)
+          setCategoryParentId(null)
+        }}
+        onSuccess={() => {
+          fetchCategories()
+        }}
+        category={editingCategory}
+        parentId={categoryParentId}
+        allCategories={categories}
+      />
     </div>
   )
 }

@@ -40,6 +40,14 @@ export async function GET(req: Request) {
         }),
       },
       include: {
+        account: {
+          select: {
+            id: true,
+            balance: true,
+            creditLimit: true,
+            isActive: true,
+          },
+        },
         _count: {
           select: {
             sales: true,

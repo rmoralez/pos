@@ -33,6 +33,8 @@ import {
   ArrowUpCircle,
   ArrowRightLeft,
   Wallet,
+  Settings,
+  AlertCircle,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
@@ -71,6 +73,7 @@ interface Fund {
   id: string
   name: string
   currentBalance: number
+  fixedFundAmount: number | null
   movements: Movement[]
 }
 
@@ -103,6 +106,7 @@ export default function PettyCashPage() {
   const [movementTypes, setMovementTypes] = useState<MovementCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [showDialog, setShowDialog] = useState(false)
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false)
   const [movementType, setMovementType] = useState<MovementType>("INCOME")
   const [formData, setFormData] = useState({
     amount: "",
@@ -111,7 +115,12 @@ export default function PettyCashPage() {
     cashAccountId: "",
     movementTypeId: "",
   })
+  const [settingsData, setSettingsData] = useState({
+    name: "",
+    fixedFundAmount: "",
+  })
   const [submitting, setSubmitting] = useState(false)
+  const [savingSettings, setSavingSettings] = useState(false)
 
   // ─── Data fetching ──────────────────────────────────────────────────────────
 
@@ -160,6 +169,53 @@ export default function PettyCashPage() {
     setMovementType(type)
     setFormData({ amount: "", concept: "", reference: "", cashAccountId: "", movementTypeId: "" })
     setShowDialog(true)
+  }
+
+  const openSettingsDialog = () => {
+    setSettingsData({
+      name: fund?.name || "",
+      fixedFundAmount: fund?.fixedFundAmount ? String(fund.fixedFundAmount) : "",
+    })
+    setShowSettingsDialog(true)
+  }
+
+  const handleSaveSettings = async () => {
+    if (!settingsData.name) {
+      toast({
+        title: "Faltan datos",
+        description: "El nombre es requerido",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setSavingSettings(true)
+    try {
+      const res = await fetch("/api/petty-cash", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: settingsData.name,
+          fixedFundAmount: settingsData.fixedFundAmount
+            ? parseFloat(settingsData.fixedFundAmount)
+            : null,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Error desconocido")
+      }
+
+      toast({ title: "Configuración actualizada correctamente" })
+      setShowSettingsDialog(false)
+      fetchFund()
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Error al guardar"
+      toast({ title: "Error", description: message, variant: "destructive" })
+    } finally {
+      setSavingSettings(false)
+    }
   }
 
   const handleSubmit = async () => {
@@ -283,9 +339,15 @@ export default function PettyCashPage() {
           <h1 className="text-3xl font-bold tracking-tight">Caja Chica</h1>
           <p className="text-muted-foreground">Gestión de efectivo y fondos</p>
         </div>
-        <Link href="/dashboard/cash-accounts">
-          <Button variant="outline">Ver Cuentas</Button>
-        </Link>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={openSettingsDialog}>
+            <Settings className="h-4 w-4 mr-2" />
+            Configuración
+          </Button>
+          <Link href="/dashboard/cash-accounts">
+            <Button variant="outline">Ver Cuentas</Button>
+          </Link>
+        </div>
       </div>
 
       {/* Balance Card */}
@@ -298,8 +360,37 @@ export default function PettyCashPage() {
           <CardDescription>{fund?.name ?? "Caja Chica"}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="text-5xl font-bold text-primary">
-            {formatCurrency(Number(fund?.currentBalance ?? 0))}
+          <div className="space-y-4">
+            <div className="text-5xl font-bold text-primary">
+              {formatCurrency(Number(fund?.currentBalance ?? 0))}
+            </div>
+
+            {fund?.fixedFundAmount && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Fondo fijo:</span>
+                  <span className="font-medium">
+                    {formatCurrency(Number(fund.fixedFundAmount))}
+                  </span>
+                </div>
+
+                {Number(fund.currentBalance) < Number(fund.fixedFundAmount) && (
+                  <div className="flex items-center gap-2 p-3 bg-orange-50 border border-orange-200 rounded-md">
+                    <AlertCircle className="h-4 w-4 text-orange-600 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-orange-900">
+                        Reposición necesaria
+                      </p>
+                      <p className="text-xs text-orange-700">
+                        Falta: {formatCurrency(
+                          Number(fund.fixedFundAmount) - Number(fund.currentBalance)
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -551,6 +642,74 @@ export default function PettyCashPage() {
                 disabled={submitting || (previewAmt !== null && previewAmt < 0)}
               >
                 {submitting ? "Guardando..." : "Confirmar"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog */}
+      <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configuración de Caja Chica</DialogTitle>
+            <DialogDescription>
+              Configura el nombre y el monto del fondo fijo
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Name */}
+            <div className="space-y-2">
+              <Label htmlFor="fund-name">Nombre *</Label>
+              <Input
+                id="fund-name"
+                value={settingsData.name}
+                onChange={(e) =>
+                  setSettingsData({ ...settingsData, name: e.target.value })
+                }
+                placeholder="Caja Chica"
+              />
+            </div>
+
+            {/* Fixed Fund Amount */}
+            <div className="space-y-2">
+              <Label htmlFor="fixed-fund">Monto del Fondo Fijo (opcional)</Label>
+              <Input
+                id="fixed-fund"
+                type="number"
+                step="0.01"
+                min="0"
+                value={settingsData.fixedFundAmount}
+                onChange={(e) =>
+                  setSettingsData({
+                    ...settingsData,
+                    fixedFundAmount: e.target.value,
+                  })
+                }
+                placeholder="0.00"
+              />
+              <p className="text-xs text-muted-foreground">
+                Si se establece un monto fijo, se mostrará una alerta cuando el
+                saldo sea menor y se indicará cuánto falta para reponer
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowSettingsDialog(false)}
+                disabled={savingSettings}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleSaveSettings}
+                disabled={savingSettings}
+              >
+                {savingSettings ? "Guardando..." : "Guardar"}
               </Button>
             </div>
           </div>

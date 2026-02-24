@@ -33,7 +33,10 @@ import {
   CheckCircle2,
   Settings,
   Plus,
+  Clock,
+  XCircle,
 } from "lucide-react"
+import { PaymentDialog } from "@/components/customers/payment-dialog"
 
 interface CustomerAccount {
   id: string
@@ -58,6 +61,10 @@ interface Movement {
   balanceBefore: string
   balanceAfter: string
   createdAt: string
+  dueDate: string | null
+  isPaid: boolean
+  paidAmount: string
+  paidDate: string | null
   user: { id: string; name: string | null; email: string } | null
   sale: { id: string; saleNumber: string } | null
 }
@@ -88,10 +95,6 @@ export default function CustomerAccountPage() {
 
   // Payment dialog state
   const [showPaymentDialog, setShowPaymentDialog] = useState(false)
-  const [paymentAmount, setPaymentAmount] = useState("")
-  const [paymentConcept, setPaymentConcept] = useState("Pago de cuenta corriente")
-  const [paymentReference, setPaymentReference] = useState("")
-  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false)
 
   // Settings dialog state
   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
@@ -172,43 +175,9 @@ export default function CustomerAccountPage() {
     }
   }
 
-  const handleRegisterPayment = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const amount = parseFloat(paymentAmount)
-    if (!amount || amount <= 0) {
-      toast({ title: "Error", description: "Ingresa un monto válido", variant: "destructive" })
-      return
-    }
-    setIsSubmittingPayment(true)
-    try {
-      const res = await fetch(`/api/customers/${customerId}/account/payments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount,
-          concept: paymentConcept || "Pago de cuenta corriente",
-          reference: paymentReference || undefined,
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || "Failed to register payment")
-      }
-      toast({ title: "Pago registrado", description: `$${amount.toFixed(2)} registrado correctamente` })
-      setShowPaymentDialog(false)
-      setPaymentAmount("")
-      setPaymentConcept("Pago de cuenta corriente")
-      setPaymentReference("")
-      await loadAll()
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "No se pudo registrar el pago",
-        variant: "destructive",
-      })
-    } finally {
-      setIsSubmittingPayment(false)
-    }
+  const isOverdue = (dueDate: string | null) => {
+    if (!dueDate) return false
+    return new Date(dueDate) < new Date()
   }
 
   const balance = account ? parseFloat(account.balance) : 0
@@ -347,18 +316,54 @@ export default function CustomerAccountPage() {
                     <TableHead>Tipo</TableHead>
                     <TableHead>Concepto</TableHead>
                     <TableHead>Referencia</TableHead>
+                    <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Monto</TableHead>
-                    <TableHead className="text-right">Saldo</TableHead>
-                    <TableHead>Operador</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {movements.map((mov) => {
                     const amount = parseFloat(mov.amount)
                     const balanceAfter = parseFloat(mov.balanceAfter)
+                    const paidAmount = parseFloat(mov.paidAmount)
                     const isCharge = mov.type === "CHARGE"
+                    const overdue = isOverdue(mov.dueDate)
+
+                    // Determine status badge for charges
+                    let statusBadge = null
+                    if (isCharge) {
+                      if (mov.isPaid) {
+                        statusBadge = (
+                          <Badge variant="outline" className="text-green-600 border-green-600">
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            Pagado
+                          </Badge>
+                        )
+                      } else if (paidAmount > 0) {
+                        statusBadge = (
+                          <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Parcial
+                          </Badge>
+                        )
+                      } else if (overdue) {
+                        statusBadge = (
+                          <Badge variant="destructive">
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Vencido
+                          </Badge>
+                        )
+                      } else {
+                        statusBadge = (
+                          <Badge variant="outline" className="text-red-600 border-red-600">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Pendiente
+                          </Badge>
+                        )
+                      }
+                    }
+
                     return (
-                      <TableRow key={mov.id}>
+                      <TableRow key={mov.id} className={overdue && !mov.isPaid ? "bg-red-50" : ""}>
                         <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                           {new Date(mov.createdAt).toLocaleDateString("es-AR", {
                             day: "2-digit",
@@ -367,6 +372,11 @@ export default function CustomerAccountPage() {
                             hour: "2-digit",
                             minute: "2-digit",
                           })}
+                          {mov.dueDate && isCharge && (
+                            <div className={`text-xs ${overdue ? "text-red-600 font-medium" : ""}`}>
+                              Vto: {new Date(mov.dueDate).toLocaleDateString("es-AR")}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant={movementTypeVariant[mov.type] ?? "secondary"}>
@@ -383,18 +393,20 @@ export default function CustomerAccountPage() {
                               ({mov.sale.saleNumber})
                             </span>
                           )}
+                          {isCharge && paidAmount > 0 && !mov.isPaid && (
+                            <div className="text-xs text-green-600 mt-1">
+                              Pagado: ${paidAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {mov.reference ?? "-"}
                         </TableCell>
+                        <TableCell>
+                          {statusBadge}
+                        </TableCell>
                         <TableCell className={`text-right font-medium ${isCharge ? "text-red-600" : "text-green-600"}`}>
                           {isCharge ? "-" : "+"}${amount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className={`text-right text-sm ${balanceAfter < 0 ? "text-red-600" : "text-green-600"}`}>
-                          ${balanceAfter.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {mov.user?.name ?? mov.user?.email ?? "-"}
                         </TableCell>
                       </TableRow>
                     )
@@ -407,69 +419,13 @@ export default function CustomerAccountPage() {
       </Card>
 
       {/* Payment dialog */}
-      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>Registrar Pago</DialogTitle>
-            <DialogDescription>
-              Registra un pago recibido de {account.customer.name}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleRegisterPayment}>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="paymentAmount">Monto *</Label>
-                <Input
-                  id="paymentAmount"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  placeholder="0.00"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  autoFocus
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="paymentConcept">Concepto</Label>
-                <Input
-                  id="paymentConcept"
-                  placeholder="Pago de cuenta corriente"
-                  value={paymentConcept}
-                  onChange={(e) => setPaymentConcept(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="paymentReference">Referencia (opcional)</Label>
-                <Input
-                  id="paymentReference"
-                  placeholder="Número de cheque, transferencia, etc."
-                  value={paymentReference}
-                  onChange={(e) => setPaymentReference(e.target.value)}
-                />
-              </div>
-              {balance < 0 && (
-                <div className="rounded-lg bg-muted/50 p-3 text-sm">
-                  <p className="text-muted-foreground">
-                    Saldo pendiente:{" "}
-                    <span className="font-medium text-red-600">
-                      ${Math.abs(balance).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </p>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowPaymentDialog(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={isSubmittingPayment}>
-                {isSubmittingPayment ? "Registrando..." : "Registrar Pago"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <PaymentDialog
+        open={showPaymentDialog}
+        onOpenChange={setShowPaymentDialog}
+        customerId={customerId}
+        customerName={account.customer.name}
+        onSuccess={loadAll}
+      />
 
       {/* Settings dialog */}
       <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>

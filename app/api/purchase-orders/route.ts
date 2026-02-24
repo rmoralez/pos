@@ -32,6 +32,8 @@ const purchaseOrderSchema = z.object({
   supplierRemitoNumber: z.string().optional(),
   supplierInvoiceDate: z.string().optional(), // ISO date string
   status: z.enum(["DRAFT", "PENDING", "APPROVED"]).default("PENDING"),
+  scannedInvoicePath: z.string().optional(),
+  remitoFilePath: z.string().optional(),
 })
 
 /**
@@ -315,6 +317,8 @@ export async function POST(req: Request) {
           supplierInvoiceDate: validatedData.supplierInvoiceDate
             ? new Date(validatedData.supplierInvoiceDate)
             : null,
+          scannedInvoicePath: validatedData.scannedInvoicePath || null,
+          remitoFilePath: validatedData.remitoFilePath || null,
           supplierId: validatedData.supplierId,
           locationId,
           tenantId: user.tenantId,

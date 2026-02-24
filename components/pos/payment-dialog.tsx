@@ -280,7 +280,9 @@ export function PaymentDialog({
           quantity: item.quantity,
           unitPrice: item.variant ? parseFloat(item.variant.salePrice) : item.product.salePrice,
           taxRate: item.product.taxRate,
-          discount: item.discount ?? 0,
+          discount: item.discount ?? 0, // Legacy support
+          discountType: item.discountType,
+          discountValue: item.discountValue,
         })),
         payments: payments.map(p => ({
           method: p.method,

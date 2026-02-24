@@ -12,11 +12,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ArrowLeft, Trash2, Mail, Phone, MapPin, FileText, Calendar, DollarSign } from "lucide-react"
+import { ArrowLeft, Trash2, Mail, Phone, MapPin, FileText, Calendar, DollarSign, AlertTriangle, CheckCircle2 } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { DisputeDialog } from "@/components/supplier-invoices/dispute-dialog"
+import { ResolveDisputeDialog } from "@/components/supplier-invoices/resolve-dispute-dialog"
 
 interface InvoiceItem {
   id: string
@@ -71,6 +73,7 @@ interface Invoice {
   balance: number
   status: "DRAFT" | "PENDING" | "PARTIAL" | "PAID" | "CANCELLED" | "DISPUTED"
   notes: string | null
+  disputeReason: string | null
   isOverdue: boolean
   createdAt: string
   Supplier: {
@@ -99,6 +102,8 @@ export default function SupplierInvoiceDetailPage({ params }: { params: { id: st
   const router = useRouter()
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showDisputeDialog, setShowDisputeDialog] = useState(false)
+  const [showResolveDialog, setShowResolveDialog] = useState(false)
 
   useEffect(() => {
     fetchInvoice()
@@ -201,6 +206,18 @@ export default function SupplierInvoiceDetailPage({ params }: { params: { id: st
           </p>
         </div>
         <div className="flex gap-2">
+          {invoice.status === "DISPUTED" && (
+            <Button onClick={() => setShowResolveDialog(true)}>
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              Resolver Disputa
+            </Button>
+          )}
+          {(invoice.status === "PENDING" || invoice.status === "PARTIAL") && (
+            <Button variant="outline" onClick={() => setShowDisputeDialog(true)}>
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              Disputar
+            </Button>
+          )}
           {invoice.status === "PENDING" &&
             invoice.SupplierPaymentAllocation.length === 0 && (
               <Button variant="destructive" onClick={handleVoid}>
@@ -464,6 +481,19 @@ export default function SupplierInvoiceDetailPage({ params }: { params: { id: st
         </Card>
       )}
 
+      {/* Dispute Reason */}
+      {invoice.status === "DISPUTED" && invoice.disputeReason && (
+        <Card className="p-6 border-destructive">
+          <h2 className="text-lg font-semibold mb-4 text-destructive flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5" />
+            Factura Disputada
+          </h2>
+          <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+            <p className="text-sm whitespace-pre-wrap">{invoice.disputeReason}</p>
+          </div>
+        </Card>
+      )}
+
       {/* Notes */}
       {invoice.notes && (
         <Card className="p-6">
@@ -471,6 +501,27 @@ export default function SupplierInvoiceDetailPage({ params }: { params: { id: st
           <p className="text-muted-foreground whitespace-pre-wrap">{invoice.notes}</p>
         </Card>
       )}
+
+      {/* Dispute Dialog */}
+      <DisputeDialog
+        open={showDisputeDialog}
+        onOpenChange={setShowDisputeDialog}
+        invoiceId={invoice.id}
+        invoiceNumber={invoice.invoiceNumber}
+        onSuccess={fetchInvoice}
+      />
+
+      {/* Resolve Dispute Dialog */}
+      <ResolveDisputeDialog
+        open={showResolveDialog}
+        onOpenChange={setShowResolveDialog}
+        invoiceId={invoice.id}
+        invoiceNumber={invoice.invoiceNumber}
+        disputeReason={invoice.disputeReason || ""}
+        currentBalance={invoice.balance}
+        paidAmount={invoice.paidAmount}
+        onSuccess={fetchInvoice}
+      />
     </div>
   )
 }

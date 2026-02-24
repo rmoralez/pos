@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
 
   if (!fund) {
     fund = await prisma.pettyCashFund.create({
-      data: { tenantId, name: "Caja Chica", currentBalance: 0 },
+      data: { tenantId, name: "Caja Chica", currentBalance: 0, fixedFundAmount: null },
       include: {
         movements: {
           orderBy: { createdAt: "desc" },
@@ -199,6 +199,69 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Error interno"
     console.error("Petty cash error:", error)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
+/**
+ * PUT /api/petty-cash
+ * Update fund settings (name, fixedFundAmount, etc.)
+ */
+export async function PUT(request: NextRequest) {
+  const user = await getCurrentUser()
+  if (!user?.tenantId || !user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
+  const tenantId = user.tenantId
+
+  try {
+    const body = await request.json()
+    const { name, fixedFundAmount } = body
+
+    // Get the active fund
+    let fund = await prisma.pettyCashFund.findFirst({
+      where: { tenantId, isActive: true },
+    })
+
+    if (!fund) {
+      fund = await prisma.pettyCashFund.create({
+        data: { tenantId, name: "Caja Chica", currentBalance: 0, fixedFundAmount: null },
+      })
+    }
+
+    // Build update data
+    const updateData: any = {}
+    if (name !== undefined) updateData.name = name
+    if (fixedFundAmount !== undefined) {
+      updateData.fixedFundAmount = fixedFundAmount ? new Decimal(fixedFundAmount) : null
+    }
+
+    // Update the fund
+    const updatedFund = await prisma.pettyCashFund.update({
+      where: { id: fund.id },
+      data: updateData,
+      include: {
+        movements: {
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          include: {
+            user: { select: { name: true } },
+            cashAccount: { select: { id: true, name: true, type: true } },
+            movementType: true,
+          },
+        },
+      },
+    })
+
+    return NextResponse.json(updatedFund)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error interno"
+    console.error("Petty cash PUT error:", error)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -35,6 +35,8 @@ const updatePurchaseOrderSchema = z.object({
   supplierRemitoNumber: z.string().optional(),
   supplierInvoiceDate: z.string().optional(),
   status: z.enum(["DRAFT", "PENDING", "APPROVED"]).optional(),
+  scannedInvoicePath: z.string().optional(),
+  remitoFilePath: z.string().optional(),
 })
 
 /**
@@ -350,6 +352,12 @@ export async function PUT(
             supplierInvoiceDate: validatedData.supplierInvoiceDate
               ? new Date(validatedData.supplierInvoiceDate)
               : null,
+          }),
+          ...(validatedData.scannedInvoicePath !== undefined && {
+            scannedInvoicePath: validatedData.scannedInvoicePath || null,
+          }),
+          ...(validatedData.remitoFilePath !== undefined && {
+            remitoFilePath: validatedData.remitoFilePath || null,
           }),
           ...(validatedData.status && { status: validatedData.status }),
           subtotal,

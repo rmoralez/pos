@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Minus, Trash2, ShoppingCart, Save } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
+import { FileUpload } from "@/components/upload/file-upload"
 import {
   Table,
   TableBody,
@@ -64,6 +65,9 @@ export default function NewPurchaseOrderPage() {
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState("")
   const [supplierRemitoNumber, setSupplierRemitoNumber] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+  const [scannedInvoicePath, setScannedInvoicePath] = useState<string>("")
+  const [remitoFilePath, setRemitoFilePath] = useState<string>("")
+  const [tempPoId] = useState(() => crypto.randomUUID())
 
   // Product search for adding to order
   const [productSearch, setProductSearch] = useState("")
@@ -262,6 +266,8 @@ export default function NewPurchaseOrderPage() {
         notes: notes || undefined,
         supplierInvoiceNumber: supplierInvoiceNumber || undefined,
         supplierRemitoNumber: supplierRemitoNumber || undefined,
+        scannedInvoicePath: scannedInvoicePath || undefined,
+        remitoFilePath: remitoFilePath || undefined,
       }
 
       const response = await fetch("/api/purchase-orders", {
@@ -386,6 +392,35 @@ export default function NewPurchaseOrderPage() {
                 rows={3}
               />
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle>Documentos</CardTitle>
+            <CardDescription>
+              Adjuntar factura del proveedor y remito escaneados
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <FileUpload
+              label="Factura del Proveedor"
+              description="Subir factura escaneada (PDF o imagen)"
+              onFileUploaded={setScannedInvoicePath}
+              currentFilePath={scannedInvoicePath}
+              recordType="purchase-order"
+              recordId={tempPoId}
+              documentType="invoice"
+            />
+            <FileUpload
+              label="Remito"
+              description="Subir remito escaneado (PDF o imagen)"
+              onFileUploaded={setRemitoFilePath}
+              currentFilePath={remitoFilePath}
+              recordType="purchase-order"
+              recordId={tempPoId}
+              documentType="remito"
+            />
           </CardContent>
         </Card>
 

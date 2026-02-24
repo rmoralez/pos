@@ -9,14 +9,34 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    // Get all categories with product counts
     const categories = await prisma.category.findMany({
       where: {
         tenantId: user.tenantId,
       },
+      include: {
+        _count: {
+          select: {
+            products: true,
+          },
+        },
+      },
       orderBy: { name: "asc" },
     })
 
-    return NextResponse.json(categories)
+    // Build tree structure - only root categories (parentId: null)
+    const buildTree = (parentId: string | null): any[] => {
+      return categories
+        .filter((cat) => cat.parentId === parentId)
+        .map((cat) => ({
+          ...cat,
+          children: buildTree(cat.id),
+        }))
+    }
+
+    const tree = buildTree(null)
+
+    return NextResponse.json(tree)
   } catch (error) {
     console.error("GET categories error:", error)
     return NextResponse.json(

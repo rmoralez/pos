@@ -21,8 +21,10 @@ import {
   ArrowDownCircle,
   DollarSign,
   RefreshCw,
+  ArrowLeftRight,
 } from "lucide-react"
 import { AccountSummaryCard } from "@/components/treasury/account-summary-card"
+import { TransferDialog } from "@/components/cash-accounts/transfer-dialog"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -105,6 +107,7 @@ export default function TreasuryPage() {
   const [summary, setSummary] = useState<TreasurySummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [showTransferDialog, setShowTransferDialog] = useState(false)
 
   // ─── Data fetching ──────────────────────────────────────────────────────────
 
@@ -227,12 +230,14 @@ export default function TreasuryPage() {
                 <span>Cuentas</span>
               </Button>
             </Link>
-            <Link href="/dashboard/cash/history">
-              <Button variant="outline" className="w-full h-20 flex-col gap-2">
-                <TrendingUp className="h-6 w-6" />
-                <span>Historial</span>
-              </Button>
-            </Link>
+            <Button
+              variant="outline"
+              className="w-full h-20 flex-col gap-2"
+              onClick={() => setShowTransferDialog(true)}
+            >
+              <ArrowLeftRight className="h-6 w-6" />
+              <span>Transferir</span>
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -372,6 +377,13 @@ export default function TreasuryPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Transfer Dialog */}
+      <TransferDialog
+        open={showTransferDialog}
+        onOpenChange={setShowTransferDialog}
+        onSuccess={() => fetchSummary(true)}
+      />
     </div>
   )
 }

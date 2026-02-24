@@ -18,6 +18,7 @@ const updateSupplierInvoiceSchema = z.object({
   dueDate: z.string().optional(), // ISO date string
   items: z.array(supplierInvoiceItemSchema).min(1).optional(),
   notes: z.string().optional(),
+  scannedInvoicePath: z.string().optional(),
 })
 
 /**
@@ -296,6 +297,9 @@ export async function PUT(
             dueDate: validatedData.dueDate ? new Date(validatedData.dueDate) : null,
           }),
           ...(validatedData.notes !== undefined && { notes: validatedData.notes || null }),
+          ...(validatedData.scannedInvoicePath !== undefined && {
+            scannedInvoicePath: validatedData.scannedInvoicePath || null,
+          }),
           ...(validatedData.items && {
             subtotal: newSubtotal,
             taxAmount: newTaxAmount,

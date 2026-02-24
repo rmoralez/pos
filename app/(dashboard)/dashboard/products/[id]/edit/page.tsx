@@ -1,11 +1,13 @@
 import { ProductForm } from "@/components/products/product-form"
 import { ProductVariantsManager } from "@/components/products/product-variants-manager"
+import { PriceHistoryTable } from "@/components/products/price-history-table"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/session"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { redirect } from "next/navigation"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export default async function EditProductPage({ params }: { params: { id: string } }) {
   const user = await getCurrentUser()
@@ -52,9 +54,25 @@ export default async function EditProductPage({ params }: { params: { id: string
         </div>
       </div>
 
-      <ProductForm productId={params.id} initialData={productData} />
+      <Tabs defaultValue="details" className="w-full">
+        <TabsList>
+          <TabsTrigger value="details">Detalles</TabsTrigger>
+          <TabsTrigger value="variants">Variantes</TabsTrigger>
+          <TabsTrigger value="price-history">Historial de Precios</TabsTrigger>
+        </TabsList>
 
-      <ProductVariantsManager productId={params.id} productSku={product.sku || undefined} />
+        <TabsContent value="details" className="space-y-6">
+          <ProductForm productId={params.id} initialData={productData} />
+        </TabsContent>
+
+        <TabsContent value="variants" className="space-y-6">
+          <ProductVariantsManager productId={params.id} productSku={product.sku || undefined} />
+        </TabsContent>
+
+        <TabsContent value="price-history" className="space-y-6">
+          <PriceHistoryTable productId={params.id} />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

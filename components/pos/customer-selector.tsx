@@ -25,6 +25,12 @@ export interface Customer {
   phone: string | null
   documentType: string | null
   documentNumber: string | null
+  account?: {
+    id: string
+    balance: string
+    creditLimit: string
+    isActive: boolean
+  } | null
 }
 
 interface CustomerSelectorProps {

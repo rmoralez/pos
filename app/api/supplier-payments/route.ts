@@ -249,6 +249,16 @@ export async function POST(req: NextRequest) {
           )
         }
 
+        // Prevent payment to disputed invoices
+        if (invoice.status === "DISPUTED") {
+          return NextResponse.json(
+            {
+              error: `Cannot allocate payment to disputed invoice ${invoice.invoiceNumber}. Please resolve the dispute first.`,
+            },
+            { status: 400 }
+          )
+        }
+
         if (Number(invoice.balance) < allocation.amount) {
           return NextResponse.json(
             {

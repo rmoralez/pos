@@ -479,10 +479,16 @@ export async function POST(req: Request) {
         const currentBalance = new Decimal(account.balance)
         const accountTotalDec = new Decimal(accountTotal)
 
+        // Credit limit enforcement
+        // Balance is positive when customer has credit, negative when they owe
+        // Credit limit is the maximum negative balance allowed
         if (creditLimit.greaterThan(0)) {
           const newBalanceAfterCharge = currentBalance.minus(accountTotalDec)
+          // Check if new balance would exceed credit limit
+          // newBalance < -creditLimit means they're over the limit
           if (newBalanceAfterCharge.lessThan(creditLimit.negated())) {
-            throw new Error("CREDIT_LIMIT_EXCEEDED")
+            const available = creditLimit.plus(currentBalance)
+            throw new Error(`CREDIT_LIMIT_EXCEEDED:Límite de crédito excedido. Disponible: $${available.toFixed(2)}`)
           }
         }
 
@@ -535,9 +541,12 @@ export async function POST(req: Request) {
           { status: 400 }
         )
       }
-      if (error.message === "CREDIT_LIMIT_EXCEEDED") {
+      if (error.message === "CREDIT_LIMIT_EXCEEDED" || error.message.startsWith("CREDIT_LIMIT_EXCEEDED:")) {
+        const message = error.message.startsWith("CREDIT_LIMIT_EXCEEDED:")
+          ? error.message.slice("CREDIT_LIMIT_EXCEEDED:".length)
+          : "La venta supera el límite de crédito del cliente"
         return NextResponse.json(
-          { error: "La venta supera el límite de crédito del cliente" },
+          { error: message },
           { status: 400 }
         )
       }

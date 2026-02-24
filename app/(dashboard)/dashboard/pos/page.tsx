@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Search, Plus, Minus, Trash2, ShoppingCart, DollarSign, AlertCircle } from "lucide-react"
+import { Search, Plus, Minus, Trash2, ShoppingCart, DollarSign, AlertCircle, Tag } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { PaymentDialog } from "@/components/pos/payment-dialog"
 import { KeyboardShortcutsHelp, KeyboardShortcutsTrigger } from "@/components/pos/keyboard-shortcuts-help"
@@ -25,6 +25,7 @@ import Link from "next/link"
 import { calculateDiscountAmount, type DiscountType } from "@/lib/pricing"
 import { CustomerSelector, type Customer } from "@/components/pos/customer-selector"
 import { VariantSelectorDialog } from "@/components/pos/variant-selector-dialog"
+import { ItemDiscountDialog } from "@/components/pos/item-discount-dialog"
 
 interface ProductVariant {
   id: string
@@ -53,6 +54,8 @@ interface CartItem {
   taxAmount: number
   total: number
   variant?: ProductVariant
+  discountType: DiscountType
+  discountValue: number
 }
 
 export default function POSPage() {
@@ -70,6 +73,8 @@ export default function POSPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [showVariantSelector, setShowVariantSelector] = useState(false)
   const [selectedProductForVariant, setSelectedProductForVariant] = useState<Product | null>(null)
+  const [showItemDiscount, setShowItemDiscount] = useState(false)
+  const [selectedItemForDiscount, setSelectedItemForDiscount] = useState<{index: number, item: CartItem} | null>(null)
 
   // Refs for focusing inputs via keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -163,6 +168,8 @@ export default function POSPage() {
         subtotal,
         taxAmount,
         total,
+        discountType: "FIXED",
+        discountValue: 0,
       }])
       // Don't clear search - allows adding multiple items quickly
     }
@@ -229,38 +236,88 @@ export default function POSPage() {
         subtotal,
         taxAmount,
         total,
+        discountType: "FIXED",
+        discountValue: 0,
       }])
     }
   }
 
-  const updateQuantity = (productId: string, newQuantity: number) => {
+  const updateQuantity = (productId: string, newQuantity: number, variantId?: string) => {
     if (newQuantity <= 0) {
-      removeFromCart(productId)
+      removeFromCart(productId, variantId)
       return
     }
 
     setCart(cart.map(item => {
-      if (item.product.id === productId) {
-        // salePrice already includes tax - we just extract it for display purposes
-        const total = Number(item.product.salePrice) * newQuantity
+      const matchesProduct = item.product.id === productId
+      const matchesVariant = variantId ? item.variant?.id === variantId : !item.variant
+
+      if (matchesProduct && matchesVariant) {
+        const unitPrice = item.variant ? Number(item.variant.salePrice) : Number(item.product.salePrice)
+        const baseTotal = unitPrice * newQuantity
+
+        // Apply item-level discount
+        const itemDiscountAmount = calculateDiscountAmount(baseTotal, item.discountType, item.discountValue)
+        const totalAfterDiscount = baseTotal - itemDiscountAmount
+
         const taxRate = Number(item.product.taxRate)
-        const subtotal = total / (1 + taxRate / 100)
-        const taxAmount = total - subtotal
+        const subtotal = totalAfterDiscount / (1 + taxRate / 100)
+        const taxAmount = totalAfterDiscount - subtotal
 
         return {
           ...item,
           quantity: newQuantity,
           subtotal,
           taxAmount,
-          total,
+          total: totalAfterDiscount,
         }
       }
       return item
     }))
   }
 
-  const removeFromCart = (productId: string) => {
-    setCart(cart.filter(item => item.product.id !== productId))
+  const removeFromCart = (productId: string, variantId?: string) => {
+    setCart(cart.filter(item => {
+      const matchesProduct = item.product.id === productId
+      const matchesVariant = variantId ? item.variant?.id === variantId : !item.variant
+      return !(matchesProduct && matchesVariant)
+    }))
+  }
+
+  const handleOpenItemDiscount = (index: number, item: CartItem) => {
+    setSelectedItemForDiscount({ index, item })
+    setShowItemDiscount(true)
+  }
+
+  const handleApplyItemDiscount = (discountType: DiscountType, discountValue: number) => {
+    if (selectedItemForDiscount === null) return
+
+    const { index, item } = selectedItemForDiscount
+
+    setCart(cart.map((cartItem, idx) => {
+      if (idx === index) {
+        const unitPrice = item.variant ? Number(item.variant.salePrice) : Number(item.product.salePrice)
+        const baseTotal = unitPrice * item.quantity
+
+        // Apply item-level discount
+        const itemDiscountAmount = calculateDiscountAmount(baseTotal, discountType, discountValue)
+        const totalAfterDiscount = baseTotal - itemDiscountAmount
+
+        const taxRate = Number(item.product.taxRate)
+        const subtotal = totalAfterDiscount / (1 + taxRate / 100)
+        const taxAmount = totalAfterDiscount - subtotal
+
+        return {
+          ...cartItem,
+          discountType,
+          discountValue,
+          subtotal,
+          taxAmount,
+          total: totalAfterDiscount,
+        }
+      }
+      return cartItem
+    }))
   }
 
   const getCartTotals = () => {
@@ -581,6 +638,10 @@ export default function POSPage() {
                       }
                     }
 
+                    const baseTotal = itemPrice * item.quantity
+                    const itemDiscountAmount = calculateDiscountAmount(baseTotal, item.discountType, item.discountValue)
+                    const hasItemDiscount = item.discountValue > 0
+
                     return (
                       <div
                         key={item.variant ? `${item.product.id}-${item.variant.id}` : `${item.product.id}-${index}`}
@@ -602,12 +663,27 @@ export default function POSPage() {
                           <p className="text-sm text-muted-foreground mt-1">
                             ${itemPrice.toLocaleString("es-AR")} x {item.quantity}
                           </p>
+                          {hasItemDiscount && (
+                            <div className="text-xs text-green-600 font-medium mt-1">
+                              Descuento: -{itemDiscountAmount.toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
                             variant="outline"
                             size="icon"
-                            onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                            onClick={() => handleOpenItemDiscount(index, item)}
+                            aria-label="Discount"
+                            title="Aplicar descuento"
+                            className={hasItemDiscount ? "bg-green-50 border-green-300 hover:bg-green-100" : ""}
+                          >
+                            <Tag className={`h-4 w-4 ${hasItemDiscount ? "text-green-600" : ""}`} />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.variant?.id)}
                             aria-label="Minus"
                           >
                             <Minus className="h-4 w-4" />
@@ -616,7 +692,7 @@ export default function POSPage() {
                           <Button
                             variant="outline"
                             size="icon"
-                            onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                            onClick={() => updateQuantity(item.product.id, item.quantity + 1, item.variant?.id)}
                             aria-label="Plus"
                           >
                             <Plus className="h-4 w-4" />
@@ -624,7 +700,7 @@ export default function POSPage() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => removeFromCart(item.product.id)}
+                            onClick={() => removeFromCart(item.product.id, item.variant?.id)}
                             aria-label="Delete"
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
@@ -656,9 +732,51 @@ export default function POSPage() {
                   value={selectedCustomer}
                   onChange={setSelectedCustomer}
                 />
-                {selectedCustomer && (
+                {selectedCustomer && selectedCustomer.account && (
+                  <div className="rounded-md border bg-muted/50 p-3 space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Saldo actual:</span>
+                      <span className={`font-semibold ${parseFloat(selectedCustomer.account.balance) < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        ${parseFloat(selectedCustomer.account.balance).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    {parseFloat(selectedCustomer.account.creditLimit) > 0 && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Límite de crédito:</span>
+                          <span className="font-medium">
+                            ${parseFloat(selectedCustomer.account.creditLimit).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Crédito disponible:</span>
+                          <span className={`font-semibold ${(parseFloat(selectedCustomer.account.creditLimit) + parseFloat(selectedCustomer.account.balance)) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${(parseFloat(selectedCustomer.account.creditLimit) + parseFloat(selectedCustomer.account.balance)).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        {totals.total > 0 && (parseFloat(selectedCustomer.account.balance) - totals.total) < -(parseFloat(selectedCustomer.account.creditLimit)) && (
+                          <div className="pt-2 border-t flex items-start gap-2">
+                            <AlertCircle className="h-3 w-3 text-amber-600 mt-0.5 flex-shrink-0" />
+                            <span className="text-amber-600 font-medium">
+                              Esta venta excedería el límite de crédito
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {!selectedCustomer.account.isActive && (
+                      <div className="pt-2 border-t flex items-start gap-2">
+                        <AlertCircle className="h-3 w-3 text-red-600 mt-0.5 flex-shrink-0" />
+                        <span className="text-red-600 font-medium">
+                          Cuenta inactiva - no se puede vender a cuenta
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {selectedCustomer && !selectedCustomer.account && (
                   <div className="text-xs text-muted-foreground">
-                    Cliente seleccionado para la venta
+                    Cliente sin cuenta corriente
                   </div>
                 )}
               </div>
@@ -851,6 +969,22 @@ export default function POSPage() {
       <KeyboardShortcutsHelp
         open={showShortcutsHelp}
         onClose={() => setShowShortcutsHelp(false)}
+      />
+
+      <ItemDiscountDialog
+        open={showItemDiscount}
+        onClose={() => {
+          setShowItemDiscount(false)
+          setSelectedItemForDiscount(null)
+        }}
+        itemName={selectedItemForDiscount?.item.product.name || ""}
+        unitPrice={selectedItemForDiscount?.item.variant
+          ? Number(selectedItemForDiscount.item.variant.salePrice)
+          : selectedItemForDiscount?.item.product.salePrice || 0}
+        quantity={selectedItemForDiscount?.item.quantity || 0}
+        currentDiscountType={selectedItemForDiscount?.item.discountType || "FIXED"}
+        currentDiscountValue={selectedItemForDiscount?.item.discountValue || 0}
+        onApply={handleApplyItemDiscount}
       />
     </div>
   )

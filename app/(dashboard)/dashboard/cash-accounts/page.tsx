@@ -28,8 +28,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Wallet, ArrowUpCircle, ArrowDownCircle } from "lucide-react"
+import { Plus, Wallet, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { TransferDialog } from "@/components/cash-accounts/transfer-dialog"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,7 +57,7 @@ interface CashAccount {
 
 interface Movement {
   id: string
-  type: MovementType | "RETURNED"
+  type: MovementType | "RETURNED" | "TRANSFER_IN" | "TRANSFER_OUT"
   amount: number
   concept: string
   reference?: string | null
@@ -93,6 +94,8 @@ const MOVEMENT_LABELS: Record<string, string> = {
   PAID: "Pago",
   RECEIVED: "Ingreso",
   RETURNED: "Devolución",
+  TRANSFER_IN: "Transferencia Entrada",
+  TRANSFER_OUT: "Transferencia Salida",
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -109,6 +112,7 @@ export default function CashAccountsPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [showMovementDialog, setShowMovementDialog] = useState(false)
+  const [showTransferDialog, setShowTransferDialog] = useState(false)
 
   // Form state
   const [createData, setCreateData] = useState({
@@ -308,6 +312,10 @@ export default function CashAccountsPage() {
           <Link href="/dashboard/petty-cash">
             <Button variant="outline">Caja Chica</Button>
           </Link>
+          <Button variant="outline" onClick={() => setShowTransferDialog(true)}>
+            <ArrowLeftRight className="h-4 w-4 mr-2" />
+            Transferir
+          </Button>
           <Button onClick={() => setShowCreateDialog(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Nueva Cuenta
@@ -511,7 +519,7 @@ export default function CashAccountsPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                         <Badge
-                          variant={m.type === "PAID" ? "destructive" : "secondary"}
+                          variant={m.type === "PAID" || m.type === "TRANSFER_OUT" ? "destructive" : "secondary"}
                           className="text-xs"
                         >
                           {MOVEMENT_LABELS[m.type] ?? m.type}
@@ -534,12 +542,12 @@ export default function CashAccountsPage() {
                     <div className="text-right flex-shrink-0 ml-4">
                       <p
                         className={`font-bold ${
-                          m.type === "PAID"
+                          m.type === "PAID" || m.type === "TRANSFER_OUT"
                             ? "text-red-600"
                             : "text-green-600"
                         }`}
                       >
-                        {m.type === "PAID" ? "-" : "+"}
+                        {m.type === "PAID" || m.type === "TRANSFER_OUT" ? "-" : "+"}
                         {formatCurrency(Number(m.amount))}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -683,6 +691,18 @@ export default function CashAccountsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Transfer Dialog ───────────────────────────────────────────────── */}
+      <TransferDialog
+        open={showTransferDialog}
+        onOpenChange={setShowTransferDialog}
+        onSuccess={() => {
+          fetchAccounts()
+          if (selectedAccount) {
+            fetchDetail(selectedAccount.id)
+          }
+        }}
+      />
     </div>
   )
 }

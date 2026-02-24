@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { toast } from "@/hooks/use-toast"
-import { Plus, Pencil, Trash2, Package } from "lucide-react"
+import { Plus, Pencil, Trash2, Package, Ruler } from "lucide-react"
 import { VariantDialog } from "./variant-dialog"
 import {
   AlertDialog,
@@ -38,6 +38,10 @@ interface Variant {
   variantValues: string
   costPrice: string
   salePrice: string
+  weight: string | null
+  width: string | null
+  height: string | null
+  depth: string | null
   isActive: boolean
   stockByLocation?: Array<{
     locationId: string
@@ -58,6 +62,7 @@ export function ProductVariantsManager({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [variantToDelete, setVariantToDelete] = useState<Variant | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [showDimensions, setShowDimensions] = useState(false)
 
   useEffect(() => {
     loadVariants()
@@ -176,10 +181,20 @@ export function ProductVariantsManager({
                 Gestiona las diferentes variantes de este producto (ej: talles, colores, materiales)
               </CardDescription>
             </div>
-            <Button onClick={handleAddVariant}>
-              <Plus className="h-4 w-4 mr-2" />
-              Agregar Variante
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDimensions(!showDimensions)}
+              >
+                <Ruler className="h-4 w-4 mr-2" />
+                {showDimensions ? "Ocultar" : "Mostrar"} Dimensiones
+              </Button>
+              <Button onClick={handleAddVariant}>
+                <Plus className="h-4 w-4 mr-2" />
+                Agregar Variante
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -207,6 +222,7 @@ export function ProductVariantsManager({
                     <TableHead>Atributos</TableHead>
                     <TableHead className="text-right">Precio Costo</TableHead>
                     <TableHead className="text-right">Precio Venta</TableHead>
+                    {showDimensions && <TableHead>Dimensiones</TableHead>}
                     <TableHead className="text-right">Stock Total</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
@@ -235,6 +251,32 @@ export function ProductVariantsManager({
                       <TableCell className="text-right font-medium">
                         ${Number(variant.salePrice).toFixed(2)}
                       </TableCell>
+                      {showDimensions && (
+                        <TableCell>
+                          <div className="text-xs space-y-0.5">
+                            {variant.weight && variant.weight !== "0" && (
+                              <div>Peso: {variant.weight}</div>
+                            )}
+                            {variant.width && (
+                              <div>Ancho: {variant.width} cm</div>
+                            )}
+                            {variant.height && (
+                              <div>Alto: {variant.height} cm</div>
+                            )}
+                            {variant.depth && (
+                              <div>Prof.: {variant.depth} cm</div>
+                            )}
+                            {(!variant.weight || variant.weight === "0") &&
+                              !variant.width &&
+                              !variant.height &&
+                              !variant.depth && (
+                                <span className="text-muted-foreground italic">
+                                  Sin dimensiones
+                                </span>
+                              )}
+                          </div>
+                        </TableCell>
+                      )}
                       <TableCell className="text-right">
                         <div className="space-y-1">
                           <div className="font-semibold">

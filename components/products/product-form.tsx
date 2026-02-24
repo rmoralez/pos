@@ -31,6 +31,7 @@ interface ProductFormProps {
 interface Category {
   id: string
   name: string
+  children?: Category[]
 }
 
 interface AlternativeCode {
@@ -151,7 +152,19 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
       const response = await fetch("/api/categories")
       if (response.ok) {
         const data = await response.json()
-        setCategories(data)
+        // Flatten the tree structure for dropdown display
+        const flattenCategories = (cats: Category[], parent: string = ""): Category[] => {
+          const result: Category[] = []
+          for (const cat of cats) {
+            const path = parent ? `${parent} > ${cat.name}` : cat.name
+            result.push({ ...cat, name: path })
+            if (cat.children && cat.children.length > 0) {
+              result.push(...flattenCategories(cat.children, path))
+            }
+          }
+          return result
+        }
+        setCategories(flattenCategories(data))
       }
     } catch (error) {
       console.error("Failed to fetch categories:", error)

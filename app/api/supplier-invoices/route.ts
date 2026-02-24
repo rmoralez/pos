@@ -20,6 +20,7 @@ const supplierInvoiceSchema = z.object({
   purchaseOrderId: z.string().optional(),
   items: z.array(supplierInvoiceItemSchema).min(1, "At least one item is required"),
   notes: z.string().optional(),
+  scannedInvoicePath: z.string().optional(),
 })
 
 /**
@@ -319,6 +320,7 @@ export async function POST(req: Request) {
           dueDate: validatedData.dueDate ? new Date(validatedData.dueDate) : null,
           status: "PENDING",
           notes: validatedData.notes || null,
+          scannedInvoicePath: validatedData.scannedInvoicePath || null,
           supplierId: validatedData.supplierId,
           supplierAccountId: supplierAccountId,
           purchaseOrderId: validatedData.purchaseOrderId || null,

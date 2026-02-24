@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { FileUpload } from "@/components/upload/file-upload"
 import { ArrowLeft, Plus, Trash2, Save } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
@@ -59,6 +60,8 @@ export default function NewSupplierInvoicePage() {
   const [loading, setLoading] = useState(false)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([])
+  const [scannedInvoicePath, setScannedInvoicePath] = useState<string>("")
+  const [tempInvoiceId] = useState(() => crypto.randomUUID())
 
   const [formData, setFormData] = useState({
     supplierId: "",
@@ -217,6 +220,7 @@ export default function NewSupplierInvoicePage() {
         dueDate: formData.dueDate || undefined,
         purchaseOrderId: formData.purchaseOrderId || undefined,
         notes: formData.notes || undefined,
+        scannedInvoicePath: scannedInvoicePath || undefined,
         items: validItems.map((item) => ({
           productId: item.productId || undefined,
           productVariantId: item.productVariantId || undefined,
@@ -370,6 +374,18 @@ export default function NewSupplierInvoicePage() {
                 onChange={(e) =>
                   setFormData({ ...formData, notes: e.target.value })
                 }
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <FileUpload
+                label="Factura Escaneada"
+                description="Subir copia escaneada de la factura del proveedor (PDF o imagen)"
+                onFileUploaded={setScannedInvoicePath}
+                currentFilePath={scannedInvoicePath}
+                recordType="supplier-invoice"
+                recordId={tempInvoiceId}
+                documentType="invoice"
               />
             </div>
           </div>
