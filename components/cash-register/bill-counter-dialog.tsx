@@ -21,20 +21,19 @@ interface BillCounterDialogProps {
   currentValue?: number
 }
 
+interface Denomination {
+  value: number
+  label: string
+}
+
 // ============================================================================
-// CONFIGURACIÓN DE DENOMINACIONES
+// DENOMINACIONES POR DEFECTO
 // ============================================================================
-// Para agregar, quitar o modificar denominaciones, edita este array:
-// - value: valor numérico de la denominación
-// - label: texto a mostrar (usa coma para decimales: "$0,50")
-//
-// Las denominaciones se clasifican automáticamente como:
-// - Billetes grandes: >= $200
-// - Billetes chicos: >= $10 y < $200
-// - Monedas: < $10
+// Estas denominaciones se usan solo si el tenant no ha configurado las suyas.
+// Para modificar las denominaciones, ve a Configuración > Denominaciones
 // ============================================================================
 
-const DEFAULT_DENOMINATIONS = [
+const DEFAULT_DENOMINATIONS: Denomination[] = [
   { value: 1000, label: "$1.000" },
   { value: 500, label: "$500" },
   { value: 200, label: "$200" },
@@ -57,7 +56,32 @@ export function BillCounterDialog({
   onConfirm,
   currentValue,
 }: BillCounterDialogProps) {
+  const [denominations, setDenominations] = useState<Denomination[]>(DEFAULT_DENOMINATIONS)
   const [counts, setCounts] = useState<Record<number, number>>({})
+
+  // Fetch denominations from API on mount
+  useEffect(() => {
+    const fetchDenominations = async () => {
+      try {
+        const response = await fetch("/api/denominations")
+        if (response.ok) {
+          const data = await response.json()
+          if (data && data.length > 0) {
+            setDenominations(data.map((d: any) => ({
+              value: Number(d.value),
+              label: d.label,
+            })))
+          }
+        }
+        // If fetch fails or returns empty, keep DEFAULT_DENOMINATIONS
+      } catch (error) {
+        console.error("Error fetching denominations:", error)
+        // Keep DEFAULT_DENOMINATIONS on error
+      }
+    }
+
+    fetchDenominations()
+  }, [])
 
   // Reset counts when dialog opens
   useEffect(() => {
@@ -127,7 +151,7 @@ export function BillCounterDialog({
                 </tr>
               </thead>
               <tbody>
-                {DEFAULT_DENOMINATIONS.map((denom, index) => {
+                {denominations.map((denom, index) => {
                   const count = counts[denom.value] || 0
                   const subtotal = denom.value * count
                   const isBigBill = denom.value >= 200

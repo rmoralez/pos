@@ -28,6 +28,7 @@ model Tenant {
   enablePettyCash          Boolean                   @default(false)
   cashAccounts             CashAccount[]
   cashAccountMovements     CashAccountMovement[]
+  cashDenominationSettings CashDenomination[]
   cashRegisters            CashRegister[]
   CashWithdrawal           CashWithdrawal[]
   categories               Category[]
@@ -1018,6 +1019,23 @@ model SupplierPaymentAllocation {
 
   @@index([supplierInvoiceId])
   @@index([supplierPaymentId])
+}
+
+model CashDenomination {
+  id        String   @id @default(cuid())
+  value     Decimal  @db.Decimal(10, 2)
+  label     String
+  sortOrder Int
+  tenantId  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, value])
+  @@index([tenantId])
+  @@index([sortOrder])
+  @@index([isActive])
 }
 
 enum UserRole {
