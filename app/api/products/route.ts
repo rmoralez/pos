@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/session"
 import { z } from "zod"
+import { normalizeSearchText, prepareSearchTerm } from "@/lib/search-utils"
 
 const productSchema = z.object({
   sku: z.string().min(1),
@@ -63,39 +64,82 @@ export async function GET(req: Request) {
       return NextResponse.json({ products })
     }
 
-    const products = await prisma.product.findMany({
-      where: {
-        tenantId: user.tenantId,
-        ...(idList && idList.length > 0 && { id: { in: idList } }),
-        ...(!idList && search && {
-          OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { sku: { contains: search, mode: "insensitive" } },
-            { barcode: { contains: search, mode: "insensitive" } },
-          ],
-        }),
-        ...(category && { categoryId: category }),
-        ...(isActive !== null && { isActive: isActive === "true" }),
-      },
-      include: {
-        category: true,
-        supplier: true,
-        stock: {
-          where: user.locationId ? { locationId: user.locationId } : undefined,
+    // If search term is provided, use enhanced search with accent handling
+    let products
+    if (!idList && search) {
+      const normalizedSearch = normalizeSearchText(search)
+      const searchPattern = prepareSearchTerm(normalizedSearch)
+
+      // Use raw SQL for accent-insensitive search
+      // We search in: name, sku, barcode, and alternative codes
+      const productIds = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT DISTINCT p.id
+        FROM "Product" p
+        LEFT JOIN "ProductAlternativeCode" pac ON p.id = pac."productId"
+        WHERE p."tenantId" = ${user.tenantId}
+          ${category ? prisma.$queryRawUnsafe(`AND p."categoryId" = '${category}'`) : prisma.$queryRawUnsafe('')}
+          ${isActive !== null ? prisma.$queryRawUnsafe(`AND p."isActive" = ${isActive === "true"}`) : prisma.$queryRawUnsafe('')}
+          AND (
+            LOWER(regexp_replace(p.name, '[^a-zA-Z0-9 ]', '', 'g')) LIKE ${searchPattern}
+            OR LOWER(regexp_replace(p.sku, '[^a-zA-Z0-9 ]', '', 'g')) LIKE ${searchPattern}
+            OR LOWER(regexp_replace(COALESCE(p.barcode, ''), '[^a-zA-Z0-9 ]', '', 'g')) LIKE ${searchPattern}
+            OR LOWER(regexp_replace(COALESCE(pac.code, ''), '[^a-zA-Z0-9 ]', '', 'g')) LIKE ${searchPattern}
+          )
+      `
+
+      // Fetch full products with relations
+      products = await prisma.product.findMany({
+        where: {
+          id: { in: productIds.map(p => p.id) },
         },
-        ProductVariant: {
-          where: {
-            isActive: true,
+        include: {
+          category: true,
+          supplier: true,
+          stock: {
+            where: user.locationId ? { locationId: user.locationId } : undefined,
           },
-          include: {
-            Stock: {
-              where: user.locationId ? { locationId: user.locationId } : undefined,
+          ProductVariant: {
+            where: {
+              isActive: true,
+            },
+            include: {
+              Stock: {
+                where: user.locationId ? { locationId: user.locationId } : undefined,
+              },
             },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
-    })
+        orderBy: { createdAt: "desc" },
+      })
+    } else {
+      // Regular query without search
+      products = await prisma.product.findMany({
+        where: {
+          tenantId: user.tenantId,
+          ...(idList && idList.length > 0 && { id: { in: idList } }),
+          ...(category && { categoryId: category }),
+          ...(isActive !== null && { isActive: isActive === "true" }),
+        },
+        include: {
+          category: true,
+          supplier: true,
+          stock: {
+            where: user.locationId ? { locationId: user.locationId } : undefined,
+          },
+          ProductVariant: {
+            where: {
+              isActive: true,
+            },
+            include: {
+              Stock: {
+                where: user.locationId ? { locationId: user.locationId } : undefined,
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+    }
 
     return NextResponse.json(products)
   } catch (error) {
