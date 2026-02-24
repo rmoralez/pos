@@ -75,6 +75,8 @@ export default function POSPage() {
   const [selectedProductForVariant, setSelectedProductForVariant] = useState<Product | null>(null)
   const [showItemDiscount, setShowItemDiscount] = useState(false)
   const [selectedItemForDiscount, setSelectedItemForDiscount] = useState<{index: number, item: CartItem} | null>(null)
+  const [selectedProductIndex, setSelectedProductIndex] = useState<number>(0)
+  const [pendingQuantity, setPendingQuantity] = useState<number>(1)
 
   // Refs for focusing inputs via keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -123,6 +125,11 @@ export default function POSPage() {
     }
   }, [search, searchProducts])
 
+  // Reset selected product index when products change
+  useEffect(() => {
+    setSelectedProductIndex(0)
+  }, [products])
+
   const addToCart = (product: Product) => {
     // Check if product has variants
     if (product.hasVariants && product.ProductVariant && product.ProductVariant.length > 0) {
@@ -144,9 +151,21 @@ export default function POSPage() {
     }
 
     const existingItem = cart.find(item => item.product.id === product.id && !item.variant)
+    const quantityToAdd = pendingQuantity
 
     if (existingItem) {
-      if (existingItem.quantity >= stockTotal) {
+      const newQuantity = existingItem.quantity + quantityToAdd
+      if (newQuantity > stockTotal) {
+        toast({
+          title: "Stock insuficiente",
+          description: `Solo hay ${stockTotal} unidades disponibles. Cantidad actual en carrito: ${existingItem.quantity}`,
+          variant: "destructive",
+        })
+        return
+      }
+      updateQuantity(product.id, newQuantity)
+    } else {
+      if (quantityToAdd > stockTotal) {
         toast({
           title: "Stock insuficiente",
           description: `Solo hay ${stockTotal} unidades disponibles`,
@@ -154,25 +173,26 @@ export default function POSPage() {
         })
         return
       }
-      updateQuantity(product.id, existingItem.quantity + 1)
-    } else {
       // salePrice already includes tax - we just extract it for display purposes
-      const total = Number(product.salePrice)
+      const unitPrice = Number(product.salePrice)
       const taxRate = Number(product.taxRate)
+      const total = unitPrice * quantityToAdd
       const subtotal = total / (1 + taxRate / 100)
       const taxAmount = total - subtotal
 
       setCart([...cart, {
         product,
-        quantity: 1,
+        quantity: quantityToAdd,
         subtotal,
         taxAmount,
         total,
         discountType: "FIXED",
         discountValue: 0,
       }])
-      // Don't clear search - allows adding multiple items quickly
     }
+
+    // Reset pending quantity after adding to cart
+    setPendingQuantity(1)
   }
 
   const addVariantToCart = (variant: ProductVariant) => {
@@ -193,12 +213,14 @@ export default function POSPage() {
     const existingItem = cart.find(
       item => item.product.id === selectedProductForVariant.id && item.variant?.id === variant.id
     )
+    const quantityToAdd = pendingQuantity
 
     if (existingItem) {
-      if (existingItem.quantity >= stockTotal) {
+      const newQuantity = existingItem.quantity + quantityToAdd
+      if (newQuantity > stockTotal) {
         toast({
           title: "Stock insuficiente",
-          description: `Solo hay ${stockTotal} unidades disponibles`,
+          description: `Solo hay ${stockTotal} unidades disponibles. Cantidad actual en carrito: ${existingItem.quantity}`,
           variant: "destructive",
         })
         return
@@ -206,7 +228,6 @@ export default function POSPage() {
       // Update quantity for this specific variant
       setCart(cart.map(item => {
         if (item.product.id === selectedProductForVariant.id && item.variant?.id === variant.id) {
-          const newQuantity = item.quantity + 1
           const total = Number(variant.salePrice) * newQuantity
           const taxRate = Number(selectedProductForVariant.taxRate)
           const subtotal = total / (1 + taxRate / 100)
@@ -223,16 +244,25 @@ export default function POSPage() {
         return item
       }))
     } else {
+      if (quantityToAdd > stockTotal) {
+        toast({
+          title: "Stock insuficiente",
+          description: `Solo hay ${stockTotal} unidades disponibles`,
+          variant: "destructive",
+        })
+        return
+      }
       // salePrice already includes tax - we just extract it for display purposes
-      const total = Number(variant.salePrice)
+      const unitPrice = Number(variant.salePrice)
       const taxRate = Number(selectedProductForVariant.taxRate)
+      const total = unitPrice * quantityToAdd
       const subtotal = total / (1 + taxRate / 100)
       const taxAmount = total - subtotal
 
       setCart([...cart, {
         product: selectedProductForVariant,
         variant,
-        quantity: 1,
+        quantity: quantityToAdd,
         subtotal,
         taxAmount,
         total,
@@ -240,6 +270,9 @@ export default function POSPage() {
         discountValue: 0,
       }])
     }
+
+    // Reset pending quantity after adding to cart
+    setPendingQuantity(1)
   }
 
   const updateQuantity = (productId: string, newQuantity: number, variantId?: string) => {
@@ -346,6 +379,7 @@ export default function POSPage() {
     setCartDiscountType("FIXED")
     setCartDiscountValue(0)
     setSelectedCustomer(null)
+    setPendingQuantity(1)
   }
 
   const handleClearCartWithConfirmation = () => {
@@ -385,6 +419,18 @@ export default function POSPage() {
       toast({
         title: "Producto agregado",
         description: `${products[0].name} agregado al carrito`,
+      })
+    }
+  }
+
+  const handleAddSelectedProduct = () => {
+    if (products.length > 0 && selectedProductIndex >= 0 && selectedProductIndex < products.length) {
+      const selectedProduct = products[selectedProductIndex]
+      const qty = pendingQuantity
+      addToCart(selectedProduct)
+      toast({
+        title: "Producto agregado",
+        description: `${selectedProduct.name} x${qty} agregado al carrito`,
       })
     }
   }
@@ -519,11 +565,37 @@ export default function POSPage() {
     },
   ])
 
-  // Handle Enter key in search input to add first product
+  // Handle keyboard navigation in search input
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault()
-      handleAddFirstProduct()
+
+      // Check if search value is a pure number (for quantity entry)
+      const numericValue = parseInt(search.trim())
+      if (!isNaN(numericValue) && numericValue > 0 && search.trim() === numericValue.toString()) {
+        // Set pending quantity and clear search
+        setPendingQuantity(numericValue)
+        setSearch("")
+        setProducts([])
+        toast({
+          title: "Cantidad establecida",
+          description: `Próximo producto: ${numericValue} unidad${numericValue > 1 ? 'es' : ''}`,
+        })
+        return
+      }
+
+      // Otherwise, add selected product
+      handleAddSelectedProduct()
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault()
+      if (products.length > 0) {
+        setSelectedProductIndex((prev) => (prev + 1) % products.length)
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      if (products.length > 0) {
+        setSelectedProductIndex((prev) => (prev - 1 + products.length) % products.length)
+      }
     }
   }
 
@@ -565,29 +637,52 @@ export default function POSPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  ref={searchInputRef}
-                  placeholder="Buscar producto... (F5 o /)"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
-                  className="pl-10"
-                  autoFocus
-                  aria-keyshortcuts="F5 /"
-                />
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    ref={searchInputRef}
+                    placeholder="Buscar producto... (F5 o /)"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    className="pl-10"
+                    autoFocus
+                    aria-keyshortcuts="F5 /"
+                  />
+                </div>
+                {pendingQuantity > 1 && (
+                  <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                    <Badge variant="default" className="bg-blue-600">
+                      Cantidad: {pendingQuantity}
+                    </Badge>
+                    <span className="text-sm text-blue-700">
+                      El próximo producto se agregará con {pendingQuantity} unidades
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPendingQuantity(1)}
+                      className="ml-auto h-6 px-2 text-xs"
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {products.length > 0 && (
                 <div className="mt-4 space-y-2 max-h-80 overflow-y-auto">
-                  {products.map((product) => {
+                  {products.map((product, index) => {
                     const stockTotal = product.stock.reduce((acc, s) => acc + s.quantity, 0)
+                    const isSelected = index === selectedProductIndex
                     return (
                       <div
                         key={product.id}
                         onClick={() => addToCart(product)}
-                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors"
+                        className={`flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors ${
+                          isSelected ? "bg-primary/10 border-primary" : ""
+                        }`}
                       >
                         <div className="flex-1">
                           <p className="font-medium">{product.name}</p>

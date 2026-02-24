@@ -116,42 +116,91 @@ export async function POST(
 
     const difference = data.closingBalance - expectedBalance
 
-    // Close cash register
-    const updated = await prisma.cashRegister.update({
-      where: {
-        id: params.id,
-      },
-      data: {
-        status: "CLOSED",
-        closedAt: new Date(),
-        closingBalance: data.closingBalance,
-        expectedBalance,
-        difference,
-        notes: data.notes
-          ? `${cashRegister.notes || ""}\n${data.notes}`.trim()
-          : cashRegister.notes,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
+    // Close cash register and return money to treasury
+    const updated = await prisma.$transaction(async (tx) => {
+      // Close the register
+      const register = await tx.cashRegister.update({
+        where: {
+          id: params.id,
+        },
+        data: {
+          status: "CLOSED",
+          closedAt: new Date(),
+          closingBalance: data.closingBalance,
+          expectedBalance,
+          difference,
+          notes: data.notes
+            ? `${cashRegister.notes || ""}\n${data.notes}`.trim()
+            : cashRegister.notes,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          location: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          _count: {
+            select: {
+              sales: true,
+              transactions: true,
+            },
           },
         },
-        location: {
-          select: {
-            id: true,
-            name: true,
+      })
+
+      // If there's a closing balance, return it to main cash account
+      // NOTE: Non-cash payments (cards, transfers, etc.) are now registered
+      // immediately at sale time, so we only need to transfer the physical cash
+      if (data.closingBalance > 0) {
+        // Find main cash account (Efectivo)
+        const mainCashAccount = await tx.cashAccount.findFirst({
+          where: {
+            tenantId: user.tenantId,
+            type: { in: ["CASH", "OPERATIONAL"] },
+            name: { contains: "Efectivo", mode: "insensitive" },
+            isActive: true,
           },
-        },
-        _count: {
-          select: {
-            sales: true,
-            transactions: true,
+        })
+
+        if (!mainCashAccount) {
+          throw new Error("No se encontró la cuenta de efectivo en tesorería")
+        }
+
+        // Calculate new balance
+        const balanceBefore = mainCashAccount.currentBalance
+        const balanceAfter = Number(balanceBefore) + data.closingBalance
+
+        // Create movement to add to cash account
+        await tx.cashAccountMovement.create({
+          data: {
+            type: "TRANSFER_IN",
+            amount: data.closingBalance,
+            concept: `Cierre de caja #${register.id.slice(-8)} - Efectivo`,
+            balanceBefore,
+            balanceAfter,
+            reference: register.id,
+            cashAccountId: mainCashAccount.id,
+            tenantId: user.tenantId,
+            userId: user.id,
           },
-        },
-      },
+        })
+
+        // Update cash account balance
+        await tx.cashAccount.update({
+          where: { id: mainCashAccount.id },
+          data: { currentBalance: balanceAfter },
+        })
+      }
+
+      return register
     })
 
     return NextResponse.json({

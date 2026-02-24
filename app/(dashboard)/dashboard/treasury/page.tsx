@@ -22,6 +22,8 @@ import {
   DollarSign,
   RefreshCw,
   ArrowLeftRight,
+  FileText,
+  ArrowRight,
 } from "lucide-react"
 import { AccountSummaryCard } from "@/components/treasury/account-summary-card"
 import { TransferDialog } from "@/components/cash-accounts/transfer-dialog"
@@ -58,6 +60,7 @@ interface TreasurySummary {
   cashInRegisters: number
   bankAccounts: number
   pettyCash: number
+  accountsReceivable: number
   accountBreakdown: Account[]
   recentMovements: Movement[]
 }
@@ -377,6 +380,38 @@ export default function TreasuryPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Accounts Receivable Info Widget */}
+      {summary && summary.accountsReceivable > 0 && (
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-100 rounded-lg">
+                  <FileText className="h-6 w-6 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    💡 Información Adicional
+                  </p>
+                  <p className="text-lg font-semibold text-blue-900">
+                    Tienes {formatCurrency(summary.accountsReceivable)} pendientes de cobro en cuentas corrientes
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Este monto no está incluido en el efectivo disponible
+                  </p>
+                </div>
+              </div>
+              <Link href="/dashboard/accounts">
+                <Button variant="outline" className="gap-2">
+                  Ver detalle
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Transfer Dialog */}
       <TransferDialog

@@ -167,31 +167,86 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create new cash register
-    const cashRegister = await prisma.cashRegister.create({
-      data: {
-        tenantId: user.tenantId,
-        locationId,
-        userId: user.id,
-        openingBalance: data.openingBalance,
-        status: "OPEN",
-        notes: data.notes,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
+    // Create new cash register and deduct from treasury account
+    const cashRegister = await prisma.$transaction(async (tx) => {
+      // Create cash register
+      const register = await tx.cashRegister.create({
+        data: {
+          tenantId: user.tenantId,
+          locationId,
+          userId: user.id,
+          openingBalance: data.openingBalance,
+          status: "OPEN",
+          notes: data.notes,
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          location: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-        location: {
-          select: {
-            id: true,
-            name: true,
+      })
+
+      // If there's an opening balance, deduct from main cash account
+      if (data.openingBalance > 0) {
+        // Find main cash account (Efectivo)
+        const mainCashAccount = await tx.cashAccount.findFirst({
+          where: {
+            tenantId: user.tenantId,
+            type: { in: ["CASH", "OPERATIONAL"] },
+            name: { contains: "Efectivo", mode: "insensitive" },
+            isActive: true,
           },
-        },
-      },
+        })
+
+        if (!mainCashAccount) {
+          throw new Error("No se encontró la cuenta de efectivo en tesorería")
+        }
+
+        // Check if there's enough balance
+        const currentBalance = Number(mainCashAccount.currentBalance)
+        if (currentBalance < data.openingBalance) {
+          throw new Error(
+            `Saldo insuficiente en cuenta de efectivo. Disponible: $${currentBalance}, Requerido: $${data.openingBalance}`
+          )
+        }
+
+        // Calculate new balance
+        const balanceBefore = mainCashAccount.currentBalance
+        const balanceAfter = Number(balanceBefore) - data.openingBalance
+
+        // Create movement to deduct from cash account
+        await tx.cashAccountMovement.create({
+          data: {
+            type: "TRANSFER_OUT",
+            amount: data.openingBalance,
+            concept: `Apertura de caja #${register.id.slice(-8)}`,
+            balanceBefore,
+            balanceAfter,
+            reference: register.id,
+            cashAccountId: mainCashAccount.id,
+            tenantId: user.tenantId,
+            userId: user.id,
+          },
+        })
+
+        // Update cash account balance
+        await tx.cashAccount.update({
+          where: { id: mainCashAccount.id },
+          data: { currentBalance: balanceAfter },
+        })
+      }
+
+      return register
     })
 
     return NextResponse.json(cashRegister, { status: 201 })

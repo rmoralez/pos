@@ -517,6 +517,50 @@ export async function POST(req: Request) {
         })
       }
 
+      // Register non-cash payments to their respective treasury accounts
+      const nonCashMethods = ["DEBIT_CARD", "CREDIT_CARD", "QR", "TRANSFER", "CHECK"]
+      const nonCashEntries = resolvedPayments.filter(p => nonCashMethods.includes(p.method))
+
+      for (const payment of nonCashEntries) {
+        // Find the payment method account mapping
+        const paymentMethodAccount = await tx.paymentMethodAccount.findFirst({
+          where: {
+            tenantId: user.tenantId,
+            paymentMethod: payment.method,
+          },
+          include: {
+            CashAccount: true,
+          },
+        })
+
+        if (paymentMethodAccount && paymentMethodAccount.CashAccount) {
+          const account = paymentMethodAccount.CashAccount
+          const balanceBefore = account.currentBalance
+          const balanceAfter = Number(balanceBefore) + payment.amount
+
+          // Create movement to register income
+          await tx.cashAccountMovement.create({
+            data: {
+              type: "SALE_INCOME",
+              amount: payment.amount,
+              concept: `Venta ${saleNumber} - ${payment.method}`,
+              balanceBefore,
+              balanceAfter,
+              reference: newSale.id,
+              cashAccountId: account.id,
+              tenantId: user.tenantId,
+              userId: user.id,
+            },
+          })
+
+          // Update cash account balance
+          await tx.cashAccount.update({
+            where: { id: account.id },
+            data: { currentBalance: balanceAfter },
+          })
+        }
+      }
+
       return newSale
     }, {
       maxWait: 30000, // 30 seconds max wait to acquire a connection

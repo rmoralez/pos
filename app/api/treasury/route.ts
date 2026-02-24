@@ -207,6 +207,24 @@ export async function GET() {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 20)
 
+    // Calculate accounts receivable (customers who owe us money)
+    // Balance is negative when customer owes money
+    const accountsReceivable = await prisma.customerAccount.aggregate({
+      where: {
+        tenantId,
+        isActive: true,
+        balance: {
+          lt: 0, // Negative balance means customer owes us
+        },
+      },
+      _sum: {
+        balance: true,
+      },
+    })
+
+    // Convert to positive number (total owed to us)
+    const totalAccountsReceivable = Math.abs(Number(accountsReceivable._sum.balance || 0))
+
     // Combine all accounts for breakdown
     const accountBreakdown = [
       ...registersWithBalances.map((reg) => ({
@@ -244,6 +262,7 @@ export async function GET() {
       cashInRegisters: totalFromRegisters,
       bankAccounts: bankAccountsTotal,
       pettyCash: pettyCashBalance,
+      accountsReceivable: totalAccountsReceivable,
       accountBreakdown,
       recentMovements: allMovements,
     })
