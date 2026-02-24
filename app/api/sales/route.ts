@@ -151,7 +151,7 @@ export async function POST(req: Request) {
       if (!defaultLocation) {
         console.error("[SALES API] No location found for tenant:", user.tenantId)
         return NextResponse.json(
-          { error: "No location found. Please create a location first." },
+          { error: "No se encontró ubicación. Por favor crea una ubicación primero." },
           { status: 400 }
         )
       }
@@ -195,7 +195,7 @@ export async function POST(req: Request) {
     if (!openCashRegister) {
       console.error("[SALES API] No open cash register found")
       return NextResponse.json(
-        { error: "No open cash register. Please open a cash register before making sales." },
+        { error: "No hay caja abierta. Por favor abre una caja antes de realizar ventas." },
         { status: 400 }
       )
     }

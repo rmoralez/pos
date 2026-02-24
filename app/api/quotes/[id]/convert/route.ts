@@ -28,13 +28,13 @@ export async function POST(
     })
 
     if (!quote) {
-      return NextResponse.json({ error: "Quote not found" }, { status: 404 })
+      return NextResponse.json({ error: "Presupuesto no encontrado" }, { status: 404 })
     }
 
     // Only DRAFT, SENT, or APPROVED quotes can be converted
     if (quote.status === "CONVERTED" || quote.status === "REJECTED") {
       return NextResponse.json(
-        { error: `Quote with status ${quote.status} cannot be converted` },
+        { error: `El presupuesto con estado ${quote.status} no puede ser convertido` },
         { status: 400 }
       )
     }
@@ -51,7 +51,7 @@ export async function POST(
 
       if (!defaultLocation) {
         return NextResponse.json(
-          { error: "No location found. Please create a location first." },
+          { error: "No se encontró ubicación. Por favor crea una ubicación primero." },
           { status: 400 }
         )
       }
@@ -83,7 +83,7 @@ export async function POST(
 
     if (!openCashRegister) {
       return NextResponse.json(
-        { error: "No open cash register. Please open a cash register before converting quotes." },
+        { error: "No hay caja abierta. Por favor abre una caja antes de convertir presupuestos." },
         { status: 400 }
       )
     }
@@ -112,7 +112,7 @@ export async function POST(
 
         if (!stock || stock.quantity < item.quantity) {
           throw new Error(
-            `Insufficient stock for product ${item.product?.name || 'Unknown'}. Available: ${stock?.quantity || 0}, Required: ${item.quantity}`
+            `Stock insuficiente para el producto ${item.product?.name || 'Desconocido'}. Disponible: ${stock?.quantity || 0}, Requerido: ${item.quantity}`
           )
         }
       }
@@ -208,7 +208,7 @@ export async function POST(
     console.error("Convert quote error:", error)
 
     return NextResponse.json(
-      { error: (error as any).message || "Internal server error" },
+      { error: (error as any).message || "Error interno del servidor" },
       { status: 500 }
     )
   }
