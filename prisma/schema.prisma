@@ -360,6 +360,7 @@ model Sale {
   userId             String
   invoiceId          String?                   @unique
   cashRegisterId     String?
+  afipResponse       String?                   @db.Text
   createdAt          DateTime                  @default(now())
   updatedAt          DateTime                  @updatedAt
   discountType       DiscountType              @default(FIXED)
