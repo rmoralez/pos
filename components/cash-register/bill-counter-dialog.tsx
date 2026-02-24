@@ -21,7 +21,19 @@ interface BillCounterDialogProps {
   currentValue?: number
 }
 
-// Denominaciones comunes en Argentina
+// ============================================================================
+// CONFIGURACIÓN DE DENOMINACIONES
+// ============================================================================
+// Para agregar, quitar o modificar denominaciones, edita este array:
+// - value: valor numérico de la denominación
+// - label: texto a mostrar (usa coma para decimales: "$0,50")
+//
+// Las denominaciones se clasifican automáticamente como:
+// - Billetes grandes: >= $200
+// - Billetes chicos: >= $10 y < $200
+// - Monedas: < $10
+// ============================================================================
+
 const DEFAULT_DENOMINATIONS = [
   { value: 1000, label: "$1.000" },
   { value: 500, label: "$500" },
@@ -95,7 +107,7 @@ export function BillCounterDialog({
 
         <div className="space-y-4 py-4">
           {/* Summary at top */}
-          <div className="sticky top-0 bg-background z-10 rounded-lg border-2 border-primary bg-primary/5 p-4">
+          <div className="sticky top-0 bg-background z-10 rounded-lg border-2 border-primary bg-primary/5 p-4 mb-4">
             <div className="flex justify-between items-center">
               <span className="text-lg font-medium">Total Contado:</span>
               <span className="text-3xl font-bold text-primary">
@@ -104,74 +116,88 @@ export function BillCounterDialog({
             </div>
           </div>
 
-          {/* Denominations Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {DEFAULT_DENOMINATIONS.map((denom) => {
-              const count = counts[denom.value] || 0
-              const subtotal = denom.value * count
+          {/* Denominations Table */}
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left p-3 font-semibold">Denominación</th>
+                  <th className="text-center p-3 font-semibold w-32">Cantidad</th>
+                  <th className="text-right p-3 font-semibold w-40">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {DEFAULT_DENOMINATIONS.map((denom, index) => {
+                  const count = counts[denom.value] || 0
+                  const subtotal = denom.value * count
+                  const isBigBill = denom.value >= 200
+                  const isSmallBill = denom.value >= 10 && denom.value < 200
+                  const isCoin = denom.value < 10
 
-              return (
-                <div
-                  key={denom.value}
-                  className="border rounded-lg p-3 space-y-2 hover:border-primary transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <Label
-                      htmlFor={`denom-${denom.value}`}
-                      className="text-base font-semibold"
+                  return (
+                    <tr
+                      key={denom.value}
+                      className={`border-t hover:bg-accent/50 transition-colors ${
+                        count > 0 ? "bg-accent/20" : ""
+                      }`}
                     >
-                      {denom.label}
-                    </Label>
-                    {subtotal > 0 && (
-                      <span className="text-xs text-muted-foreground">
-                        ${subtotal.toLocaleString("es-AR", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </span>
-                    )}
-                  </div>
-                  <Input
-                    id={`denom-${denom.value}`}
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="0"
-                    value={count || ""}
-                    onChange={(e) => handleCountChange(denom.value, e.target.value)}
-                    className="text-center text-lg"
-                  />
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Summary by type */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-6 pt-4 border-t">
-            <div className="rounded-lg bg-blue-50 dark:bg-blue-950/20 p-3">
-              <div className="text-sm text-muted-foreground mb-1">Billetes Grandes</div>
-              <div className="text-xl font-bold">
-                ${[1000, 500, 200]
-                  .reduce((sum, val) => sum + (counts[val] || 0) * val, 0)
-                  .toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-              </div>
-            </div>
-            <div className="rounded-lg bg-green-50 dark:bg-green-950/20 p-3">
-              <div className="text-sm text-muted-foreground mb-1">Billetes Chicos</div>
-              <div className="text-xl font-bold">
-                ${[100, 50, 20, 10]
-                  .reduce((sum, val) => sum + (counts[val] || 0) * val, 0)
-                  .toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-              </div>
-            </div>
-            <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 p-3">
-              <div className="text-sm text-muted-foreground mb-1">Monedas</div>
-              <div className="text-xl font-bold">
-                ${[5, 2, 1, 0.5, 0.25, 0.1, 0.05]
-                  .reduce((sum, val) => sum + (counts[val] || 0) * val, 0)
-                  .toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-              </div>
-            </div>
+                      <td className="p-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-lg">{denom.label}</span>
+                          {isBigBill && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                              Billete grande
+                            </span>
+                          )}
+                          {isSmallBill && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">
+                              Billete
+                            </span>
+                          )}
+                          {isCoin && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                              Moneda
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <Input
+                          id={`denom-${denom.value}`}
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="0"
+                          value={count || ""}
+                          onChange={(e) => handleCountChange(denom.value, e.target.value)}
+                          className="text-center text-lg w-full"
+                        />
+                      </td>
+                      <td className="p-3 text-right">
+                        <span className={`text-lg font-semibold ${subtotal > 0 ? "text-primary" : "text-muted-foreground"}`}>
+                          ${subtotal.toLocaleString("es-AR", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot className="bg-muted border-t-2">
+                <tr>
+                  <td colSpan={2} className="p-3 text-right font-bold text-lg">
+                    TOTAL:
+                  </td>
+                  <td className="p-3 text-right">
+                    <span className="text-2xl font-bold text-primary">
+                      ${total.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
 
