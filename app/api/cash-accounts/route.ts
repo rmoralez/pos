@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const validTypes = ["SUPPLIER", "OWNER", "OPERATIONAL", "BANK", "OTHER"]
+    const validTypes = ["SUPPLIER", "OWNER", "OPERATIONAL", "BANK", "CASH", "OTHER"]
     if (!validTypes.includes(type)) {
       return NextResponse.json({ error: "Tipo de cuenta inválido" }, { status: 400 })
     }

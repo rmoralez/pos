@@ -28,13 +28,23 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Wallet, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight } from "lucide-react"
+import { Plus, Wallet, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Pencil, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { TransferDialog } from "@/components/cash-accounts/transfer-dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type AccountType = "SUPPLIER" | "OWNER" | "OPERATIONAL" | "BANK" | "OTHER"
+type AccountType = "SUPPLIER" | "OWNER" | "OPERATIONAL" | "BANK" | "CASH" | "OTHER"
 type MovementType = "PAID" | "RECEIVED"
 
 interface MovementTypeOption {
@@ -79,6 +89,7 @@ const TYPE_LABELS: Record<AccountType, string> = {
   OWNER: "Titular",
   OPERATIONAL: "Operativo",
   BANK: "Banco",
+  CASH: "Efectivo",
   OTHER: "Otro",
 }
 
@@ -87,6 +98,7 @@ const TYPE_COLORS: Record<AccountType, string> = {
   OWNER: "bg-blue-100 text-blue-800",
   OPERATIONAL: "bg-yellow-100 text-yellow-800",
   BANK: "bg-green-100 text-green-800",
+  CASH: "bg-emerald-100 text-emerald-800",
   OTHER: "bg-gray-100 text-gray-800",
 }
 
@@ -113,9 +125,16 @@ export default function CashAccountsPage() {
   const [showDetailDialog, setShowDetailDialog] = useState(false)
   const [showMovementDialog, setShowMovementDialog] = useState(false)
   const [showTransferDialog, setShowTransferDialog] = useState(false)
+  const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   // Form state
   const [createData, setCreateData] = useState({
+    name: "",
+    type: "SUPPLIER" as AccountType,
+    description: "",
+  })
+  const [editData, setEditData] = useState({
     name: "",
     type: "SUPPLIER" as AccountType,
     description: "",
@@ -272,6 +291,83 @@ export default function CashAccountsPage() {
     }
   }
 
+  const openEditDialog = () => {
+    if (!selectedAccount) return
+    setEditData({
+      name: selectedAccount.name,
+      type: selectedAccount.type,
+      description: selectedAccount.description || "",
+    })
+    setShowEditDialog(true)
+  }
+
+  const handleEdit = async () => {
+    if (!selectedAccount) return
+    if (!editData.name.trim() || !editData.type) {
+      toast({
+        title: "Faltan datos",
+        description: "Nombre y tipo son requeridos",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/cash-accounts/${selectedAccount.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editData.name.trim(),
+          type: editData.type,
+          description: editData.description.trim() || undefined,
+        }),
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Error desconocido")
+      }
+
+      toast({ title: "Cuenta actualizada correctamente" })
+      setShowEditDialog(false)
+      fetchAccounts()
+      fetchDetail(selectedAccount.id)
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Error al actualizar"
+      toast({ title: "Error", description: message, variant: "destructive" })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!selectedAccount) return
+
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/cash-accounts/${selectedAccount.id}`, {
+        method: "DELETE",
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Error desconocido")
+      }
+
+      toast({ title: "Cuenta eliminada correctamente" })
+      setShowDeleteDialog(false)
+      setShowDetailDialog(false)
+      setSelectedAccount(null)
+      fetchAccounts()
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Error al eliminar"
+      toast({ title: "Error", description: message, variant: "destructive" })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   // ─── Derived values ─────────────────────────────────────────────────────────
 
   const previewMovementBalance = () => {
@@ -420,6 +516,7 @@ export default function CashAccountsPage() {
                   <SelectItem value="OWNER">Titular</SelectItem>
                   <SelectItem value="OPERATIONAL">Operativo</SelectItem>
                   <SelectItem value="BANK">Banco</SelectItem>
+                  <SelectItem value="CASH">Efectivo</SelectItem>
                   <SelectItem value="OTHER">Otro</SelectItem>
                 </SelectContent>
               </Select>
@@ -501,6 +598,26 @@ export default function CashAccountsPage() {
               >
                 <ArrowDownCircle className="h-4 w-4 mr-2" />
                 Ingresar Dinero
+              </Button>
+            </div>
+
+            {/* Edit and Delete buttons */}
+            <div className="flex gap-2 pt-2 border-t">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={openEditDialog}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Editar Cuenta
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 text-destructive hover:text-destructive"
+                onClick={() => setShowDeleteDialog(true)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Eliminar
               </Button>
             </div>
 
@@ -703,6 +820,121 @@ export default function CashAccountsPage() {
           }
         }}
       />
+
+      {/* ─── Edit Account Dialog ───────────────────────────────────────────── */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Cuenta</DialogTitle>
+            <DialogDescription>
+              Modificá los datos de la cuenta
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Nombre *</Label>
+              <Input
+                id="edit-name"
+                value={editData.name}
+                onChange={(e) =>
+                  setEditData({ ...editData, name: e.target.value })
+                }
+                placeholder="Ej: Editorial Atlántida, Retiro Mayo"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-type">Tipo *</Label>
+              <Select
+                value={editData.type}
+                onValueChange={(v) =>
+                  setEditData({ ...editData, type: v as AccountType })
+                }
+              >
+                <SelectTrigger id="edit-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SUPPLIER">Proveedor</SelectItem>
+                  <SelectItem value="OWNER">Titular</SelectItem>
+                  <SelectItem value="OPERATIONAL">Operativo</SelectItem>
+                  <SelectItem value="BANK">Banco</SelectItem>
+                  <SelectItem value="CASH">Efectivo</SelectItem>
+                  <SelectItem value="OTHER">Otro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-desc">Descripción (opcional)</Label>
+              <Input
+                id="edit-desc"
+                value={editData.description}
+                onChange={(e) =>
+                  setEditData({ ...editData, description: e.target.value })
+                }
+                placeholder="Ej: Pago mensual libros escolares"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowEditDialog(false)}
+                disabled={submitting}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleEdit}
+                disabled={submitting}
+              >
+                {submitting ? "Guardando..." : "Guardar Cambios"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Delete Confirmation Dialog ────────────────────────────────────── */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Eliminación</AlertDialogTitle>
+            <AlertDialogDescription>
+              ¿Estás seguro que querés eliminar la cuenta &quot;{selectedAccount?.name}&quot;?
+              <br />
+              <br />
+              {selectedAccount?.movements && selectedAccount.movements.length > 0 ? (
+                <span className="text-destructive font-medium">
+                  Esta cuenta tiene {selectedAccount.movements.length} movimientos registrados
+                  y no podrá ser eliminada.
+                </span>
+              ) : (
+                <span>
+                  Esta acción no se puede deshacer. La cuenta será marcada como inactiva.
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={submitting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={
+                submitting ||
+                (selectedAccount?.movements && selectedAccount.movements.length > 0)
+              }
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {submitting ? "Eliminando..." : "Eliminar Cuenta"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
