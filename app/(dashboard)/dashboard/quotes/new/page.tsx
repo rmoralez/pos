@@ -1,26 +1,20 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Search, Plus, Minus, Trash2, FileText, Save, Send, User, X, Calendar, ArrowLeft } from "lucide-react"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Search, Plus, Minus, Trash2, FileText, Save, Send, Calendar, ArrowLeft, Percent } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
+import { calculateDiscountAmount, type DiscountType } from "@/lib/pricing"
+import { CustomerSelector, type Customer } from "@/components/pos/customer-selector"
 import { VariantSelectorDialog } from "@/components/pos/variant-selector-dialog"
-
-interface Product {
-  id: string
-  name: string
-  sku: string
-  salePrice: number
-  taxRate: number
-  stock: Array<{ quantity: number }>
-  variants?: ProductVariant[]
-}
+import { ItemDiscountDialog } from "@/components/pos/item-discount-dialog"
 
 interface ProductVariant {
   id: string
@@ -31,21 +25,26 @@ interface ProductVariant {
   Stock: Array<{ quantity: number }>
 }
 
-interface CartItem {
-  product: Product
-  variant?: ProductVariant
-  quantity: number
-  unitPrice: number
+interface Product {
+  id: string
+  sku: string
+  name: string
+  salePrice: number
   taxRate: number
-  discount: number
-  total: number
+  stock: Array<{ quantity: number }>
+  hasVariants?: boolean
+  ProductVariant?: ProductVariant[]
 }
 
-interface Customer {
-  id: string
-  name: string
-  email: string | null
-  phone: string | null
+interface CartItem {
+  product: Product
+  quantity: number
+  subtotal: number
+  taxAmount: number
+  total: number
+  variant?: ProductVariant
+  discountType: DiscountType
+  discountValue: number
 }
 
 export default function NewQuotePage() {
@@ -55,240 +54,300 @@ export default function NewQuotePage() {
   const [cart, setCart] = useState<CartItem[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [selectedProductIndex, setSelectedProductIndex] = useState<number>(0)
+  const [cartDiscountType, setCartDiscountType] = useState<DiscountType>("FIXED")
+  const [cartDiscountValue, setCartDiscountValue] = useState(0)
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [showVariantSelector, setShowVariantSelector] = useState(false)
   const [selectedProductForVariant, setSelectedProductForVariant] = useState<Product | null>(null)
-  const searchInputRef = useRef<HTMLInputElement>(null)
-
-  // Quote specific fields
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
-  const [customerSearch, setCustomerSearch] = useState("")
-  const [customerResults, setCustomerResults] = useState<Customer[]>([])
-  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+  const [showItemDiscount, setShowItemDiscount] = useState(false)
+  const [selectedItemForDiscount, setSelectedItemForDiscount] = useState<{index: number, item: CartItem} | null>(null)
+  const [selectedProductIndex, setSelectedProductIndex] = useState<number>(0)
+  const [pendingQuantity, setPendingQuantity] = useState<number>(1)
   const [validUntil, setValidUntil] = useState("")
   const [notes, setNotes] = useState("")
-  const [cartDiscount, setCartDiscount] = useState(0)
 
-  // Search products with debounce
-  useEffect(() => {
-    if (search.length < 2) {
-      setProducts([])
-      setSelectedProductIndex(0)
-      return
+  // Refs for focusing inputs
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const discountInputRef = useRef<HTMLInputElement>(null)
+
+  const searchProducts = useCallback(async () => {
+    try {
+      setIsSearching(true)
+      const response = await fetch(`/api/products?search=${encodeURIComponent(search)}&isActive=true`)
+      if (!response.ok) throw new Error("Failed to search products")
+      const data = await response.json()
+      setProducts(data.slice(0, 10))
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "No se pudieron buscar los productos",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSearching(false)
     }
-
-    const timer = setTimeout(async () => {
-      try {
-        setIsSearching(true)
-        const normalizedSearch = search
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .toLowerCase()
-
-        const response = await fetch(
-          `/api/products?search=${encodeURIComponent(normalizedSearch)}&isActive=true&limit=20`
-        )
-
-        if (!response.ok) throw new Error("Error al buscar productos")
-
-        const data = await response.json()
-        setProducts(data.slice(0, 20))
-        setSelectedProductIndex(0)
-      } catch (error) {
-        console.error("Error searching products:", error)
-        setProducts([])
-      } finally {
-        setIsSearching(false)
-      }
-    }, 300)
-
-    return () => clearTimeout(timer)
   }, [search])
 
-  // Search customers
   useEffect(() => {
-    if (customerSearch.length < 2) {
-      setCustomerResults([])
-      setShowCustomerDropdown(false)
-      return
+    if (search.length >= 2) {
+      searchProducts()
+    } else {
+      setProducts([])
     }
+  }, [search, searchProducts])
 
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/customers?search=${encodeURIComponent(customerSearch)}&limit=8`)
-        if (res.ok) {
-          const data = await res.json()
-          setCustomerResults(Array.isArray(data) ? data.slice(0, 8) : [])
-          setShowCustomerDropdown(true)
-        }
-      } catch {
-        // ignore
-      }
-    }, 250)
-
-    return () => clearTimeout(timer)
-  }, [customerSearch])
-
-  // Keyboard navigation
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Arrow navigation for product results
-      if (products.length > 0 && document.activeElement === searchInputRef.current) {
-        if (e.key === "ArrowDown") {
-          e.preventDefault()
-          setSelectedProductIndex((prev) => (prev + 1) % products.length)
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault()
-          setSelectedProductIndex((prev) => (prev - 1 + products.length) % products.length)
-        } else if (e.key === "Enter" && products[selectedProductIndex]) {
-          e.preventDefault()
-          handleProductSelect(products[selectedProductIndex])
-        }
-      }
+    setSelectedProductIndex(0)
+  }, [products])
 
-      // Focus search with F5 or /
-      if ((e.key === "F5" || e.key === "/") && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault()
-        searchInputRef.current?.focus()
-      }
-
-      // Clear cart with ESC
-      if (e.key === "Escape" && cart.length > 0 && !showVariantSelector) {
-        if (confirm("¿Limpiar el presupuesto?")) {
-          clearCart()
-        }
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [products, selectedProductIndex, cart, showVariantSelector])
-
-  const handleProductSelect = (product: Product) => {
-    // If product has variants, show selector
-    if (product.variants && product.variants.length > 0) {
+  const addToCart = (product: Product) => {
+    if (product.hasVariants && product.ProductVariant && product.ProductVariant.length > 0) {
       setSelectedProductForVariant(product)
       setShowVariantSelector(true)
       return
     }
 
-    // Add product without variant
-    addToCart(product)
-  }
+    const stockTotal = product.stock.reduce((acc, s) => acc + s.quantity, 0)
 
-  const addToCart = (product: Product, variant?: ProductVariant) => {
-    const price = variant ? Number(variant.salePrice) : product.salePrice
-    const cartKey = variant ? `${product.id}-${variant.id}` : product.id
-
-    setCart((prevCart) => {
-      const existingIndex = prevCart.findIndex((item) => {
-        const itemKey = item.variant
-          ? `${item.product.id}-${item.variant.id}`
-          : item.product.id
-        return itemKey === cartKey
+    if (stockTotal === 0) {
+      toast({
+        title: "Sin stock",
+        description: "Este producto no tiene stock disponible",
+        variant: "destructive",
       })
-
-      if (existingIndex !== -1) {
-        const newCart = [...prevCart]
-        const item = newCart[existingIndex]
-        const newQuantity = item.quantity + 1
-        const itemTotal = price * newQuantity * (1 - item.discount / 100)
-
-        newCart[existingIndex] = {
-          ...item,
-          quantity: newQuantity,
-          total: itemTotal,
-        }
-        return newCart
-      } else {
-        return [
-          ...prevCart,
-          {
-            product,
-            variant,
-            quantity: 1,
-            unitPrice: price,
-            taxRate: product.taxRate,
-            discount: 0,
-            total: price,
-          },
-        ]
-      }
-    })
-
-    setSearch("")
-    setProducts([])
-    searchInputRef.current?.focus()
-  }
-
-  const updateQuantity = (index: number, newQuantity: number) => {
-    if (newQuantity <= 0) {
-      removeFromCart(index)
       return
     }
 
-    setCart((prevCart) => {
-      const newCart = [...prevCart]
-      const item = newCart[index]
-      const itemTotal = item.unitPrice * newQuantity * (1 - item.discount / 100)
+    const existingItem = cart.find(item => item.product.id === product.id && !item.variant)
+    const quantityToAdd = pendingQuantity
 
-      newCart[index] = {
-        ...item,
-        quantity: newQuantity,
-        total: itemTotal,
+    if (existingItem) {
+      const newQuantity = existingItem.quantity + quantityToAdd
+      if (newQuantity > stockTotal) {
+        toast({
+          title: "Stock insuficiente",
+          description: `Solo hay ${stockTotal} unidades disponibles. Cantidad actual en carrito: ${existingItem.quantity}`,
+          variant: "destructive",
+        })
+        return
       }
-      return newCart
-    })
+      updateQuantity(product.id, newQuantity)
+    } else {
+      if (quantityToAdd > stockTotal) {
+        toast({
+          title: "Stock insuficiente",
+          description: `Solo hay ${stockTotal} unidades disponibles`,
+          variant: "destructive",
+        })
+        return
+      }
+      const unitPrice = Number(product.salePrice)
+      const taxRate = Number(product.taxRate)
+      const total = unitPrice * quantityToAdd
+      const subtotal = total / (1 + taxRate / 100)
+      const taxAmount = total - subtotal
+
+      setCart([...cart, {
+        product,
+        quantity: quantityToAdd,
+        subtotal,
+        taxAmount,
+        total,
+        discountType: "FIXED",
+        discountValue: 0,
+      }])
+    }
+
+    setPendingQuantity(1)
   }
 
-  const updateDiscount = (index: number, discount: number) => {
-    setCart((prevCart) => {
-      const newCart = [...prevCart]
-      const item = newCart[index]
-      const itemTotal = item.unitPrice * item.quantity * (1 - discount / 100)
+  const addVariantToCart = (variant: ProductVariant) => {
+    if (!selectedProductForVariant) return
 
-      newCart[index] = {
-        ...item,
-        discount,
-        total: itemTotal,
+    const stockTotal = variant.Stock.reduce((acc, s) => acc + s.quantity, 0)
+
+    if (stockTotal === 0) {
+      toast({
+        title: "Sin stock",
+        description: "Esta variante no tiene stock disponible",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const existingItem = cart.find(
+      item => item.product.id === selectedProductForVariant.id && item.variant?.id === variant.id
+    )
+    const quantityToAdd = pendingQuantity
+
+    if (existingItem) {
+      const newQuantity = existingItem.quantity + quantityToAdd
+      if (newQuantity > stockTotal) {
+        toast({
+          title: "Stock insuficiente",
+          description: `Solo hay ${stockTotal} unidades disponibles. Cantidad actual en carrito: ${existingItem.quantity}`,
+          variant: "destructive",
+        })
+        return
       }
-      return newCart
-    })
+      setCart(cart.map(item => {
+        if (item.product.id === selectedProductForVariant.id && item.variant?.id === variant.id) {
+          const total = Number(variant.salePrice) * newQuantity
+          const taxRate = Number(selectedProductForVariant.taxRate)
+          const subtotal = total / (1 + taxRate / 100)
+          const taxAmount = total - subtotal
+
+          return {
+            ...item,
+            quantity: newQuantity,
+            subtotal,
+            taxAmount,
+            total,
+          }
+        }
+        return item
+      }))
+    } else {
+      if (quantityToAdd > stockTotal) {
+        toast({
+          title: "Stock insuficiente",
+          description: `Solo hay ${stockTotal} unidades disponibles`,
+          variant: "destructive",
+        })
+        return
+      }
+      const unitPrice = Number(variant.salePrice)
+      const taxRate = Number(selectedProductForVariant.taxRate)
+      const total = unitPrice * quantityToAdd
+      const subtotal = total / (1 + taxRate / 100)
+      const taxAmount = total - subtotal
+
+      setCart([...cart, {
+        product: selectedProductForVariant,
+        variant,
+        quantity: quantityToAdd,
+        subtotal,
+        taxAmount,
+        total,
+        discountType: "FIXED",
+        discountValue: 0,
+      }])
+    }
+
+    setPendingQuantity(1)
   }
 
-  const removeFromCart = (index: number) => {
-    setCart((prevCart) => prevCart.filter((_, i) => i !== index))
+  const updateQuantity = (productId: string, newQuantity: number, variantId?: string) => {
+    if (newQuantity <= 0) {
+      removeFromCart(productId, variantId)
+      return
+    }
+
+    setCart(cart.map(item => {
+      const matchesProduct = item.product.id === productId
+      const matchesVariant = variantId ? item.variant?.id === variantId : !item.variant
+
+      if (matchesProduct && matchesVariant) {
+        const unitPrice = item.variant ? Number(item.variant.salePrice) : Number(item.product.salePrice)
+        const baseTotal = unitPrice * newQuantity
+
+        const itemDiscountAmount = calculateDiscountAmount(baseTotal, item.discountType, item.discountValue)
+        const totalAfterDiscount = baseTotal - itemDiscountAmount
+
+        const taxRate = Number(item.product.taxRate)
+        const subtotal = totalAfterDiscount / (1 + taxRate / 100)
+        const taxAmount = totalAfterDiscount - subtotal
+
+        return {
+          ...item,
+          quantity: newQuantity,
+          subtotal,
+          taxAmount,
+          total: totalAfterDiscount,
+        }
+      }
+      return item
+    }))
+  }
+
+  const removeFromCart = (productId: string, variantId?: string) => {
+    setCart(cart.filter(item => {
+      const matchesProduct = item.product.id === productId
+      const matchesVariant = variantId ? item.variant?.id === variantId : !item.variant
+      return !(matchesProduct && matchesVariant)
+    }))
+  }
+
+  const handleOpenItemDiscount = (index: number, item: CartItem) => {
+    setSelectedItemForDiscount({ index, item })
+    setShowItemDiscount(true)
+  }
+
+  const handleApplyItemDiscount = (discountType: DiscountType, discountValue: number) => {
+    if (selectedItemForDiscount === null) return
+
+    const { index, item } = selectedItemForDiscount
+
+    setCart(cart.map((cartItem, idx) => {
+      if (idx === index) {
+        const unitPrice = item.variant ? Number(item.variant.salePrice) : Number(item.product.salePrice)
+        const baseTotal = unitPrice * item.quantity
+
+        const itemDiscountAmount = calculateDiscountAmount(baseTotal, discountType, discountValue)
+        const totalAfterDiscount = baseTotal - itemDiscountAmount
+
+        const taxRate = Number(item.product.taxRate)
+        const subtotal = totalAfterDiscount / (1 + taxRate / 100)
+        const taxAmount = totalAfterDiscount - subtotal
+
+        return {
+          ...cartItem,
+          discountType,
+          discountValue,
+          subtotal,
+          taxAmount,
+          total: totalAfterDiscount,
+        }
+      }
+      return cartItem
+    }))
+  }
+
+  const getCartTotals = () => {
+    const subtotal = cart.reduce((acc, item) => acc + item.subtotal, 0)
+    const taxAmount = cart.reduce((acc, item) => acc + item.taxAmount, 0)
+    const totalBeforeDiscount = cart.reduce((acc, item) => acc + item.total, 0)
+
+    const cartDiscountAmount = calculateDiscountAmount(totalBeforeDiscount, cartDiscountType, cartDiscountValue)
+    const total = totalBeforeDiscount - cartDiscountAmount
+
+    return {
+      subtotal,
+      taxAmount,
+      total,
+      cartDiscountAmount,
+      cartDiscountType,
+      cartDiscountValue
+    }
   }
 
   const clearCart = () => {
     setCart([])
     setSearch("")
     setProducts([])
-    setCartDiscount(0)
-    searchInputRef.current?.focus()
-  }
-
-  const selectCustomer = (customer: Customer) => {
-    setSelectedCustomer(customer)
-    setCustomerSearch("")
-    setShowCustomerDropdown(false)
-  }
-
-  const clearCustomer = () => {
+    setCartDiscountType("FIXED")
+    setCartDiscountValue(0)
     setSelectedCustomer(null)
-    setCustomerSearch("")
+    setPendingQuantity(1)
+    setValidUntil("")
+    setNotes("")
   }
-
-  // Calculate totals
-  const itemsSubtotal = cart.reduce((sum, item) => sum + item.total, 0)
-  const cartDiscountAmount = itemsSubtotal * (cartDiscount / 100)
-  const total = itemsSubtotal - cartDiscountAmount
 
   const handleSaveQuote = async (status: "DRAFT" | "SENT") => {
     if (cart.length === 0) {
       toast({
         title: "Error",
-        description: "Debe agregar al menos un producto",
+        description: "Debe agregar al menos un producto al presupuesto",
         variant: "destructive",
       })
       return
@@ -297,17 +356,19 @@ export default function NewQuotePage() {
     try {
       setIsSaving(true)
 
+      const totals = getCartTotals()
+
       const quoteData = {
-        items: cart.map((item) => ({
+        items: cart.map(item => ({
           productId: item.product.id,
-          productVariantId: item.variant?.id,
+          variantId: item.variant?.id,
           quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          taxRate: item.taxRate,
-          discount: item.discount,
+          unitPrice: item.variant ? Number(item.variant.salePrice) : Number(item.product.salePrice),
+          taxRate: Number(item.product.taxRate),
+          discount: item.discountValue,
         })),
         customerId: selectedCustomer?.id,
-        discountAmount: cartDiscountAmount,
+        discountAmount: totals.cartDiscountAmount,
         validUntil: validUntil || undefined,
         notes: notes || undefined,
         status,
@@ -315,13 +376,15 @@ export default function NewQuotePage() {
 
       const response = await fetch("/api/quotes", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(quoteData),
       })
 
       if (!response.ok) {
         const data = await response.json()
-        throw new Error(data.error || "Error al crear presupuesto")
+        throw new Error(data.error || "Error al crear el presupuesto")
       }
 
       const quote = await response.json()
@@ -331,7 +394,7 @@ export default function NewQuotePage() {
         description: `Presupuesto ${quote.quoteNumber} creado exitosamente`,
       })
 
-      router.push(`/dashboard/quotes/${quote.id}`)
+      router.push("/dashboard/quotes")
     } catch (error: any) {
       toast({
         title: "Error",
@@ -343,80 +406,128 @@ export default function NewQuotePage() {
     }
   }
 
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+
+      const numericValue = parseInt(search.trim())
+      if (!isNaN(numericValue) && numericValue > 0 && search.trim() === numericValue.toString()) {
+        setPendingQuantity(numericValue)
+        setSearch("")
+        setProducts([])
+        toast({
+          title: "Cantidad establecida",
+          description: `Próximo producto: ${numericValue} unidad${numericValue > 1 ? 'es' : ''}`,
+        })
+        return
+      }
+
+      if (products.length > 0 && selectedProductIndex >= 0 && selectedProductIndex < products.length) {
+        const selectedProduct = products[selectedProductIndex]
+        addToCart(selectedProduct)
+        toast({
+          title: "Producto agregado",
+          description: `${selectedProduct.name} agregado al presupuesto`,
+        })
+      }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault()
+      if (products.length > 0) {
+        setSelectedProductIndex((prev) => (prev + 1) % products.length)
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      if (products.length > 0) {
+        setSelectedProductIndex((prev) => (prev - 1 + products.length) % products.length)
+      }
+    }
+  }
+
+  const totals = getCartTotals()
+
   return (
-    <div className="h-screen flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b bg-background">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => router.push("/dashboard/quotes")}
-          >
-            <ArrowLeft className="h-5 w-5" />
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => router.push("/dashboard/quotes")}>
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Nuevo Presupuesto</h1>
-            <p className="text-sm text-muted-foreground">
+            <h1 className="text-3xl font-bold tracking-tight">Nuevo Presupuesto</h1>
+            <p className="text-muted-foreground">
               Crea una cotización para tus clientes
             </p>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left side - Products and Cart */}
-        <div className="flex-1 flex flex-col overflow-hidden p-4">
-          {/* Search */}
-          <Card className="mb-4">
-            <CardContent className="pt-6">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  ref={searchInputRef}
-                  placeholder="Buscar producto por nombre, SKU o código..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10 text-lg h-12"
-                  autoFocus
-                />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Products Search */}
+        <div className="lg:col-span-2 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Buscar Productos</CardTitle>
+              <CardDescription>
+                Busca por nombre, SKU o código de barras
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    ref={searchInputRef}
+                    placeholder="Buscar producto..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    className="pl-10"
+                    autoFocus
+                  />
+                </div>
+                {pendingQuantity > 1 && (
+                  <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                    <Badge variant="default" className="bg-blue-600">
+                      Cantidad: {pendingQuantity}
+                    </Badge>
+                    <span className="text-sm text-blue-700">
+                      El próximo producto se agregará con {pendingQuantity} unidades
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setPendingQuantity(1)}
+                      className="ml-auto h-6 px-2 text-xs"
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                )}
               </div>
 
-              {/* Product results */}
               {products.length > 0 && (
-                <div className="mt-4 space-y-2 max-h-64 overflow-y-auto">
+                <div className="mt-4 space-y-2 max-h-80 overflow-y-auto">
                   {products.map((product, index) => {
-                    const stockQty = product.stock?.reduce((sum, s) => sum + s.quantity, 0) || 0
-                    const hasVariants = product.variants && product.variants.length > 0
+                    const stockTotal = product.stock.reduce((acc, s) => acc + s.quantity, 0)
                     const isSelected = index === selectedProductIndex
-
                     return (
                       <div
                         key={product.id}
-                        onClick={() => handleProductSelect(product)}
-                        className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-colors ${
-                          isSelected ? "bg-primary/10 border-primary" : "hover:bg-accent"
+                        onClick={() => addToCart(product)}
+                        className={`flex items-center justify-between p-3 border rounded-lg hover:bg-accent cursor-pointer transition-colors ${
+                          isSelected ? "bg-primary/10 border-primary" : ""
                         }`}
                       >
                         <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium">{product.name}</p>
-                            {hasVariants && (
-                              <Badge variant="outline" className="text-xs">
-                                {product.variants!.length} variantes
-                              </Badge>
-                            )}
-                          </div>
+                          <p className="font-medium">{product.name}</p>
                           <p className="text-sm text-muted-foreground">{product.sku}</p>
                         </div>
                         <div className="flex items-center gap-4">
-                          <Badge variant={stockQty > 0 ? "default" : "destructive"}>
-                            Stock: {stockQty}
+                          <Badge variant={stockTotal > 0 ? "default" : "destructive"}>
+                            Stock: {stockTotal}
                           </Badge>
                           <p className="text-lg font-bold">
-                            ${Number(product.salePrice).toLocaleString("es-AR", {
-                              minimumFractionDigits: 2,
-                            })}
+                            ${Number(product.salePrice).toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                           </p>
                         </div>
                       </div>
@@ -427,90 +538,105 @@ export default function NewQuotePage() {
             </CardContent>
           </Card>
 
-          {/* Cart */}
-          <Card className="flex-1 overflow-hidden flex flex-col">
+          {/* Cart Items */}
+          <Card>
             <CardHeader>
               <CardTitle>Productos del Presupuesto</CardTitle>
               <CardDescription>
                 {cart.length} {cart.length === 1 ? "producto" : "productos"}
               </CardDescription>
             </CardHeader>
-            <CardContent className="flex-1 overflow-y-auto">
+            <CardContent>
               {cart.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <FileText className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground">No hay productos agregados</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Busca productos para comenzar
-                    </p>
-                  </div>
+                <div className="text-center py-12">
+                  <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">No hay productos agregados</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Busca productos para comenzar
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-4">
                   {cart.map((item, index) => {
-                    const itemName = item.variant
-                      ? `${item.product.name} (${item.variant.variantValues})`
-                      : item.product.name
+                    const itemPrice = item.variant ? Number(item.variant.salePrice) : item.product.salePrice
+                    const parseVariantValues = (variantValues: string): Record<string, string> => {
+                      try {
+                        return JSON.parse(variantValues)
+                      } catch {
+                        return {}
+                      }
+                    }
+
+                    const baseTotal = itemPrice * item.quantity
+                    const itemDiscountAmount = calculateDiscountAmount(baseTotal, item.discountType, item.discountValue)
+                    const hasItemDiscount = item.discountValue > 0
 
                     return (
                       <div
-                        key={`${item.product.id}-${item.variant?.id || "base"}-${index}`}
-                        className="flex items-center gap-3 p-3 border rounded-lg"
+                        key={item.variant ? `${item.product.id}-${item.variant.id}` : `${item.product.id}-${index}`}
+                        className="flex items-center gap-4 p-3 border rounded-lg"
                       >
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{itemName}</p>
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <span>${item.unitPrice.toLocaleString("es-AR")}</span>
-                            {item.discount > 0 && (
-                              <span className="text-orange-600">-{item.discount}%</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Label className="text-xs">Dto.%</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={item.discount || ""}
-                              onChange={(e) =>
-                                updateDiscount(index, parseFloat(e.target.value) || 0)
-                              }
-                              className="h-6 w-16 text-xs"
-                            />
-                          </div>
+                        <div className="flex-1">
+                          <p className="font-medium">{item.product.name}</p>
+                          {item.variant && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {Object.entries(parseVariantValues(item.variant.variantValues)).map(
+                                ([key, value]) => (
+                                  <Badge key={key} variant="secondary" className="text-xs">
+                                    {key}: {value}
+                                  </Badge>
+                                )
+                              )}
+                            </div>
+                          )}
+                          <p className="text-sm text-muted-foreground mt-1">
+                            ${itemPrice.toLocaleString("es-AR")} x {item.quantity}
+                          </p>
+                          {hasItemDiscount && (
+                            <div className="text-xs text-green-600 font-medium mt-1">
+                              Descuento: -{itemDiscountAmount.toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
+                            variant={hasItemDiscount ? "default" : "outline"}
+                            size="icon"
+                            onClick={() => handleOpenItemDiscount(index, item)}
+                            aria-label="Discount"
+                            title="Aplicar descuento"
+                            className={hasItemDiscount ? "bg-green-600 hover:bg-green-700" : "border-orange-300 hover:bg-orange-50"}
+                          >
+                            <Percent className={`h-4 w-4 ${hasItemDiscount ? "text-white" : "text-orange-600"}`} />
+                          </Button>
+                          <Button
                             variant="outline"
                             size="icon"
-                            className="h-8 w-8"
-                            onClick={() => updateQuantity(index, item.quantity - 1)}
+                            onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.variant?.id)}
+                            aria-label="Minus"
                           >
-                            <Minus className="h-3 w-3" />
+                            <Minus className="h-4 w-4" />
                           </Button>
                           <span className="w-12 text-center font-medium">{item.quantity}</span>
                           <Button
                             variant="outline"
                             size="icon"
-                            className="h-8 w-8"
-                            onClick={() => updateQuantity(index, item.quantity + 1)}
+                            onClick={() => updateQuantity(item.product.id, item.quantity + 1, item.variant?.id)}
+                            aria-label="Plus"
                           >
-                            <Plus className="h-3 w-3" />
+                            <Plus className="h-4 w-4" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8"
-                            onClick={() => removeFromCart(index)}
+                            onClick={() => removeFromCart(item.product.id, item.variant?.id)}
+                            aria-label="Delete"
                           >
-                            <Trash2 className="h-3 w-3 text-destructive" />
+                            <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
                         </div>
-                        <div className="text-right w-24">
-                          <p className="font-bold">
-                            ${item.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                          </p>
+                        <div className="text-right">
+                          <p className="font-bold">${item.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</p>
                         </div>
                       </div>
                     )
@@ -521,147 +647,136 @@ export default function NewQuotePage() {
           </Card>
         </div>
 
-        {/* Right side - Summary and Details */}
-        <div className="w-96 border-l p-4 space-y-4 overflow-y-auto">
-          {/* Customer */}
+        {/* Summary */}
+        <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Cliente</CardTitle>
+              <CardTitle>Resumen</CardTitle>
             </CardHeader>
-            <CardContent>
-              {selectedCustomer ? (
-                <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/40">
-                  <User className="h-4 w-4 shrink-0" />
-                  <span className="text-sm flex-1 truncate">{selectedCustomer.name}</span>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={clearCustomer}>
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              ) : (
+            <CardContent className="space-y-4">
+              {/* Customer Selection */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Cliente (Opcional)</Label>
+                <CustomerSelector
+                  value={selectedCustomer}
+                  onChange={setSelectedCustomer}
+                />
+              </div>
+
+              {/* Valid Until */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Válido hasta (Opcional)</Label>
                 <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar cliente (opcional)..."
-                    value={customerSearch}
-                    onChange={(e) => setCustomerSearch(e.target.value)}
-                    onFocus={() =>
-                      customerSearch.length >= 2 && setShowCustomerDropdown(true)
-                    }
-                    onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
+                    type="date"
+                    value={validUntil}
+                    onChange={(e) => setValidUntil(e.target.value)}
+                    className="pl-10"
                   />
-                  {showCustomerDropdown && customerResults.length > 0 && (
-                    <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-md max-h-48 overflow-y-auto">
-                      {customerResults.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex items-center gap-2"
-                          onMouseDown={() => selectCustomer(c)}
-                        >
-                          <User className="h-3.5 w-3.5 shrink-0" />
-                          <span className="truncate">{c.name}</span>
-                        </button>
-                      ))}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Notas (Opcional)</Label>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Condiciones, comentarios..."
+                  className="min-h-[80px]"
+                />
+              </div>
+
+              {/* Discount Section */}
+              {cart.length > 0 && (
+                <div className="border-t pt-4 space-y-3">
+                  <Label className="text-sm font-medium">Descuento General</Label>
+                  <RadioGroup
+                    value={cartDiscountType}
+                    onValueChange={(value) => {
+                      setCartDiscountType(value as DiscountType)
+                      setCartDiscountValue(0)
+                    }}
+                    className="flex gap-4"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="PERCENTAGE" id="discount-percentage" />
+                      <Label htmlFor="discount-percentage" className="font-normal cursor-pointer">
+                        Porcentaje
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="FIXED" id="discount-fixed" />
+                      <Label htmlFor="discount-fixed" className="font-normal cursor-pointer">
+                        Monto Fijo
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      ref={discountInputRef}
+                      type="number"
+                      min="0"
+                      step={cartDiscountType === "PERCENTAGE" ? "1" : "0.01"}
+                      max={cartDiscountType === "PERCENTAGE" ? "100" : undefined}
+                      value={cartDiscountValue === 0 ? "" : cartDiscountValue}
+                      onChange={(e) => {
+                        const value = parseFloat(e.target.value) || 0
+                        if (cartDiscountType === "PERCENTAGE") {
+                          setCartDiscountValue(Math.min(100, Math.max(0, value)))
+                        } else {
+                          const totalBeforeDiscount = cart.reduce((acc, item) => acc + item.total, 0)
+                          setCartDiscountValue(Math.min(totalBeforeDiscount, Math.max(0, value)))
+                        }
+                      }}
+                      placeholder={cartDiscountType === "PERCENTAGE" ? "%" : "$"}
+                      className="flex-1"
+                    />
+                    {cartDiscountType === "PERCENTAGE" && (
+                      <span className="text-sm text-muted-foreground">%</span>
+                    )}
+                  </div>
+                  {totals.cartDiscountAmount > 0 && (
+                    <div className="flex justify-between text-sm text-green-600">
+                      <span>Descuento aplicado:</span>
+                      <span className="font-medium">
+                        -${totals.cartDiscountAmount.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                      </span>
                     </div>
                   )}
                 </div>
               )}
-            </CardContent>
-          </Card>
 
-          {/* Valid Until */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Válido Hasta</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  type="date"
-                  value={validUntil}
-                  onChange={(e) => setValidUntil(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Notes */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Notas</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Condiciones, comentarios adicionales..."
-                className="min-h-[80px]"
-              />
-            </CardContent>
-          </Card>
-
-          {/* Totals */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Resumen</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Label className="text-xs flex-1">Descuento General (%)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={cartDiscount || ""}
-                  onChange={(e) => setCartDiscount(parseFloat(e.target.value) || 0)}
-                  className="h-8 w-20 text-center"
-                />
-              </div>
-
-              {cartDiscount > 0 && (
-                <>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span>${itemsSubtotal.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-orange-600">
-                    <span>Descuento ({cartDiscount}%)</span>
-                    <span>-${cartDiscountAmount.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
-                  </div>
-                </>
-              )}
-
-              <div className="flex justify-between text-2xl font-bold pt-2 border-t">
+              <div className="border-t pt-2 flex justify-between text-2xl font-bold">
                 <span>Total</span>
-                <span>${total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
+                <span>${totals.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>
               </div>
 
-              <div className="space-y-2 pt-4">
+              <div className="space-y-2">
                 <Button
                   className="w-full"
-                  onClick={() => handleSaveQuote("SENT")}
                   disabled={cart.length === 0 || isSaving}
+                  onClick={() => handleSaveQuote("DRAFT")}
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {isSaving ? "Guardando..." : "Guardar Borrador"}
+                </Button>
+                <Button
+                  className="w-full"
+                  variant="default"
+                  disabled={cart.length === 0 || isSaving}
+                  onClick={() => handleSaveQuote("SENT")}
                 >
                   <Send className="mr-2 h-4 w-4" />
                   {isSaving ? "Guardando..." : "Guardar y Enviar"}
                 </Button>
                 <Button
-                  variant="outline"
                   className="w-full"
-                  onClick={() => handleSaveQuote("DRAFT")}
-                  disabled={cart.length === 0 || isSaving}
-                >
-                  <Save className="mr-2 h-4 w-4" />
-                  Guardar como Borrador
-                </Button>
-                <Button
                   variant="outline"
-                  className="w-full"
                   onClick={clearCart}
                   disabled={cart.length === 0}
                 >
-                  <Trash2 className="mr-2 h-4 w-4" />
                   Limpiar
                 </Button>
               </div>
@@ -670,22 +785,31 @@ export default function NewQuotePage() {
         </div>
       </div>
 
-      {/* Variant Selector Dialog */}
       <VariantSelectorDialog
         open={showVariantSelector}
-        productName={selectedProductForVariant?.name || ""}
-        variants={selectedProductForVariant?.variants || []}
-        onSelectVariant={(variant: any) => {
-          if (selectedProductForVariant) {
-            addToCart(selectedProductForVariant, variant)
-          }
-          setShowVariantSelector(false)
-          setSelectedProductForVariant(null)
-        }}
         onClose={() => {
           setShowVariantSelector(false)
           setSelectedProductForVariant(null)
         }}
+        productName={selectedProductForVariant?.name || ""}
+        variants={selectedProductForVariant?.ProductVariant || []}
+        onSelectVariant={addVariantToCart}
+      />
+
+      <ItemDiscountDialog
+        open={showItemDiscount}
+        onClose={() => {
+          setShowItemDiscount(false)
+          setSelectedItemForDiscount(null)
+        }}
+        itemName={selectedItemForDiscount?.item.product.name || ""}
+        unitPrice={selectedItemForDiscount?.item.variant
+          ? Number(selectedItemForDiscount.item.variant.salePrice)
+          : selectedItemForDiscount?.item.product.salePrice || 0}
+        quantity={selectedItemForDiscount?.item.quantity || 0}
+        currentDiscountType={selectedItemForDiscount?.item.discountType || "FIXED"}
+        currentDiscountValue={selectedItemForDiscount?.item.discountValue || 0}
+        onApply={handleApplyItemDiscount}
       />
     </div>
   )
