@@ -202,7 +202,7 @@ export async function GET(
     <tbody>
       ${quote.items.map(item => `
         <tr>
-          <td>${item.product.name}</td>
+          <td>${item.product?.name || 'Unknown Product'}</td>
           <td class="text-right">$${Number(item.unitPrice).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
           <td class="text-right">${item.quantity}</td>
           <td class="text-right">${Number(item.discount) > 0 ? Number(item.discount).toFixed(0) + '%' : '-'}</td>

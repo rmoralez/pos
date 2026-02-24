@@ -276,8 +276,9 @@ export function PaymentDialog({
       const saleData: any = {
         items: cart.map((item: any) => ({
           productId: item.product.id,
+          productVariantId: item.variant?.id,
           quantity: item.quantity,
-          unitPrice: item.product.salePrice,
+          unitPrice: item.variant ? parseFloat(item.variant.salePrice) : item.product.salePrice,
           taxRate: item.product.taxRate,
           discount: item.discount ?? 0,
         })),

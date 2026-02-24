@@ -25,7 +25,9 @@ import {
   AlertCircle,
   Receipt,
   CreditCard,
+  Wallet,
 } from "lucide-react"
+import { WithdrawalDialog } from "@/components/cash-register/withdrawal-dialog"
 
 interface PaymentBreakdown {
   CASH: number
@@ -91,6 +93,18 @@ interface Sale {
   payments?: { method: string; amount: number }[]
 }
 
+interface Withdrawal {
+  id: string
+  amount: number
+  concept: string
+  reference: string | null
+  withdrawnAt: string
+  User: {
+    id: string
+    name: string
+  }
+}
+
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CASH: "Efectivo",
   DEBIT_CARD: "Débito",
@@ -108,7 +122,9 @@ export default function CashRegisterDetailPage() {
   const [cashRegister, setCashRegister] = useState<CashRegister | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [sales, setSales] = useState<Sale[]>([])
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([])
   const [loading, setLoading] = useState(true)
+  const [withdrawalDialogOpen, setWithdrawalDialogOpen] = useState(false)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -135,6 +151,13 @@ export default function CashRegisterDetailPage() {
           const salesData = await salesResponse.json()
           setSales(salesData.sales || [])
         }
+
+        // Fetch withdrawals
+        const withdrawalsResponse = await fetch(`/api/cash-registers/withdrawals?cashRegisterId=${params.id}`)
+        if (withdrawalsResponse.ok) {
+          const withdrawalsData = await withdrawalsResponse.json()
+          setWithdrawals(withdrawalsData.withdrawals || [])
+        }
       } catch (error) {
         console.error("Error fetching cash register details:", error)
       } finally {
@@ -144,6 +167,28 @@ export default function CashRegisterDetailPage() {
 
     fetchData()
   }, [params.id])
+
+  const handleWithdrawalSuccess = () => {
+    // Refresh data
+    const fetchData = async () => {
+      try {
+        const registerResponse = await fetch(`/api/cash-registers/${params.id}`)
+        if (registerResponse.ok) {
+          const registerData = await registerResponse.json()
+          setCashRegister(registerData)
+        }
+
+        const withdrawalsResponse = await fetch(`/api/cash-registers/withdrawals?cashRegisterId=${params.id}`)
+        if (withdrawalsResponse.ok) {
+          const withdrawalsData = await withdrawalsResponse.json()
+          setWithdrawals(withdrawalsData.withdrawals || [])
+        }
+      } catch (error) {
+        console.error("Error refreshing data:", error)
+      }
+    }
+    fetchData()
+  }
 
   if (loading) {
     return (
@@ -180,6 +225,12 @@ export default function CashRegisterDetailPage() {
 
   const breakdown = cashRegister.paymentBreakdown
 
+  // Calculate total withdrawals
+  const totalWithdrawals = withdrawals.reduce((sum, w) => sum + Number(w.amount), 0)
+
+  // Calculate available balance (opening + sales + incomes - expenses - withdrawals)
+  const availableBalance = (cashRegister.calculatedBalance || 0) - totalWithdrawals
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -189,14 +240,22 @@ export default function CashRegisterDetailPage() {
             {cashRegister.user.name} - {cashRegister.location.name}
           </p>
         </div>
-        <Button variant="outline" onClick={() => router.push("/dashboard/cash/history")}>
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Volver al Historial
-        </Button>
+        <div className="flex gap-2">
+          {cashRegister.status === "OPEN" && (
+            <Button onClick={() => setWithdrawalDialogOpen(true)} variant="destructive">
+              <Wallet className="mr-2 h-4 w-4" />
+              Retirar Efectivo
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => router.push("/dashboard/cash/history")}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Volver al Historial
+          </Button>
+        </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Balance Inicial</CardTitle>
@@ -245,6 +304,21 @@ export default function CashRegisterDetailPage() {
             <div className="text-2xl font-bold">
               {formatCurrency(cashRegister.expenses || 0)}
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Retiros</CardTitle>
+            <Wallet className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {formatCurrency(totalWithdrawals)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {withdrawals.length} retiros
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -446,6 +520,9 @@ export default function CashRegisterDetailPage() {
               <TabsTrigger value="sales">
                 Ventas ({sales.length})
               </TabsTrigger>
+              <TabsTrigger value="withdrawals">
+                Retiros ({withdrawals.length})
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="transactions" className="mt-4">
@@ -593,9 +670,75 @@ export default function CashRegisterDetailPage() {
                 </Table>
               )}
             </TabsContent>
+
+            <TabsContent value="withdrawals" className="mt-4">
+              {withdrawals.length === 0 ? (
+                <div className="text-center py-8">
+                  <Wallet className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    No hay retiros registrados
+                  </p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Concepto</TableHead>
+                      <TableHead>Referencia</TableHead>
+                      <TableHead>Usuario</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {withdrawals.map((withdrawal) => {
+                      const withdrawnAt = new Date(withdrawal.withdrawnAt)
+                      return (
+                        <TableRow key={withdrawal.id}>
+                          <TableCell>
+                            <div className="text-sm">
+                              {withdrawnAt.toLocaleDateString("es-AR")}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {withdrawnAt.toLocaleTimeString("es-AR", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">{withdrawal.concept}</div>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {withdrawal.reference || "-"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {withdrawal.User.name}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            <span className="text-orange-600">
+                              -{formatCurrency(withdrawal.amount)}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </TabsContent>
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Withdrawal Dialog */}
+      <WithdrawalDialog
+        open={withdrawalDialogOpen}
+        onOpenChange={setWithdrawalDialogOpen}
+        onSuccess={handleWithdrawalSuccess}
+        cashRegisterId={params.id as string}
+        availableBalance={availableBalance}
+      />
     </div>
   )
 }

@@ -112,7 +112,7 @@ export async function POST(
 
         if (!stock || stock.quantity < item.quantity) {
           throw new Error(
-            `Insufficient stock for product ${item.product.name}. Available: ${stock?.quantity || 0}, Required: ${item.quantity}`
+            `Insufficient stock for product ${item.product?.name || 'Unknown'}. Available: ${stock?.quantity || 0}, Required: ${item.quantity}`
           )
         }
       }
@@ -136,7 +136,7 @@ export async function POST(
               productId: item.productId,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
-              costPrice: item.product.costPrice ?? null,
+              costPrice: item.product?.costPrice ?? null,
               subtotal: item.subtotal,
               taxRate: item.taxRate,
               taxAmount: item.taxAmount,
@@ -163,6 +163,8 @@ export async function POST(
 
       // Update stock and create stock movements
       for (const item of quote.items) {
+        if (!item.productId) continue; // Skip items without productId
+
         await tx.stock.update({
           where: {
             productId_locationId: {

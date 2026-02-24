@@ -17,6 +17,10 @@ import {
   FolderOpen,
   FileText,
   CreditCard,
+  Truck,
+  ClipboardList,
+  FileSpreadsheet,
+  Landmark,
 } from "lucide-react"
 
 const navigation = [
@@ -25,11 +29,15 @@ const navigation = [
   { name: "Stock", href: "/dashboard/stock", icon: Boxes },
   { name: "Ventas", href: "/dashboard/sales", icon: Receipt },
   { name: "Presupuestos", href: "/dashboard/quotes", icon: FileText },
+  { name: "Órdenes de Compra", href: "/dashboard/purchase-orders", icon: ClipboardList },
   { name: "Caja", href: "/dashboard/cash", icon: DollarSign },
+  { name: "Tesorería", href: "/dashboard/treasury", icon: Landmark },
   { name: "Caja Chica", href: "/dashboard/petty-cash", icon: Banknote },
   { name: "Cuentas", href: "/dashboard/cash-accounts", icon: FolderOpen },
   { name: "Ctas. Corrientes", href: "/dashboard/accounts", icon: CreditCard },
+  { name: "Ctas. por Pagar", href: "/dashboard/accounts-payable", icon: FileSpreadsheet },
   { name: "Clientes", href: "/dashboard/customers", icon: Users },
+  { name: "Proveedores", href: "/dashboard/suppliers", icon: Truck },
   { name: "P&L / Resultado", href: "/dashboard/reports/profit-loss", icon: BarChart3 },
   { name: "Configuración", href: "/dashboard/settings", icon: Settings },
 ]

@@ -43,11 +43,13 @@ import {
   Save,
   Shield,
   ArrowRightLeft,
+  CreditCard,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { MovementTypesTab } from "@/components/settings/movement-types-tab"
+import { PaymentMethodAccountsTab } from "@/components/settings/payment-method-accounts-tab"
 
 interface Tenant {
   id: string
@@ -499,6 +501,10 @@ export default function SettingsPage() {
             <ArrowRightLeft className="mr-2 h-4 w-4" />
             Tipos de Movimiento
           </TabsTrigger>
+          <TabsTrigger value="payment-methods">
+            <CreditCard className="mr-2 h-4 w-4" />
+            Métodos de Pago
+          </TabsTrigger>
           <TabsTrigger value="afip">
             <FileText className="mr-2 h-4 w-4" />
             AFIP
@@ -805,6 +811,11 @@ export default function SettingsPage() {
         {/* Movement Types Tab */}
         <TabsContent value="movement-types" className="space-y-4">
           <MovementTypesTab />
+        </TabsContent>
+
+        {/* Payment Method Accounts Tab */}
+        <TabsContent value="payment-methods" className="space-y-4">
+          <PaymentMethodAccountsTab />
         </TabsContent>
 
         {/* AFIP Tab */}

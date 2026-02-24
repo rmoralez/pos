@@ -1,4 +1,5 @@
 import { ProductForm } from "@/components/products/product-form"
+import { ProductVariantsManager } from "@/components/products/product-variants-manager"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/session"
 import { ArrowLeft } from "lucide-react"
@@ -52,6 +53,8 @@ export default async function EditProductPage({ params }: { params: { id: string
       </div>
 
       <ProductForm productId={params.id} initialData={productData} />
+
+      <ProductVariantsManager productId={params.id} productSku={product.sku || undefined} />
     </div>
   )
 }

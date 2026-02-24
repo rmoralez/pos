@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/session"
 
 /**
  * GET /api/stock
- * Get stock levels for all products
+ * Get stock levels for all products and variants
  * Optional filters: locationId, search (product name/SKU), lowStock
  */
 export async function GET(req: Request) {
@@ -26,25 +26,50 @@ export async function GET(req: Request) {
       )
     }
 
-    // Get stock levels with product information
+    // Get stock levels with product information (both regular products and variants)
     const stockItems = await prisma.stock.findMany({
       where: {
         locationId,
-        product: {
-          tenantId: user.tenantId,
-          ...(search && {
-            OR: [
-              { name: { contains: search, mode: "insensitive" } },
-              { sku: { contains: search, mode: "insensitive" } },
-              { barcode: { contains: search, mode: "insensitive" } },
-            ],
-          }),
-        },
+        OR: [
+          // Products without variants
+          {
+            product: {
+              tenantId: user.tenantId,
+              hasVariants: false,
+              ...(search && {
+                OR: [
+                  { name: { contains: search, mode: "insensitive" } },
+                  { sku: { contains: search, mode: "insensitive" } },
+                  { barcode: { contains: search, mode: "insensitive" } },
+                ],
+              }),
+            },
+          },
+          // Product variants
+          {
+            ProductVariant: {
+              tenantId: user.tenantId,
+              isActive: true,
+              ...(search && {
+                OR: [
+                  { sku: { contains: search, mode: "insensitive" } },
+                  { barcode: { contains: search, mode: "insensitive" } },
+                  { Product: { name: { contains: search, mode: "insensitive" } } },
+                ],
+              }),
+            },
+          },
+        ],
       },
       include: {
         product: {
           include: {
             category: true,
+          },
+        },
+        ProductVariant: {
+          include: {
+            Product: true,
           },
         },
         location: {
@@ -61,7 +86,13 @@ export async function GET(req: Request) {
 
     // Filter by low stock if requested
     const filteredStock = lowStock
-      ? stockItems.filter((item) => item.quantity <= item.product.minStock)
+      ? stockItems.filter((item) => {
+          if (item.product && !item.product.hasVariants) {
+            return item.quantity <= item.product.minStock
+          }
+          // For variants, we don't have minStock, so just show all
+          return true
+        })
       : stockItems
 
     return NextResponse.json(filteredStock)

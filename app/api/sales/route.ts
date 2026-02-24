@@ -9,6 +9,7 @@ const PaymentMethodEnum = z.enum(["CASH", "DEBIT_CARD", "CREDIT_CARD", "TRANSFER
 
 const saleItemSchema = z.object({
   productId: z.string(),
+  productVariantId: z.string().optional(),
   quantity: z.coerce.number().int().positive(),
   unitPrice: z.coerce.number().positive(),
   taxRate: z.coerce.number().min(0).max(100),
@@ -218,7 +219,8 @@ export async function POST(req: Request) {
       console.log("[SALES API TX] Processing items:", validatedData.items.length)
       const itemsData = await Promise.all(
         validatedData.items.map(async (item, index) => {
-          console.log(`[SALES API TX] Processing item ${index + 1}:`, item.productId)
+          console.log(`[SALES API TX] Processing item ${index + 1}:`, item.productId, item.productVariantId)
+
           // Verify product exists and belongs to tenant
           const product = await tx.product.findFirst({
             where: {
@@ -233,18 +235,44 @@ export async function POST(req: Request) {
             throw new Error(`Product ${item.productId} not found`)
           }
 
-          // Check stock
+          // If selling a variant, verify it exists and get its cost price
+          let variant = null
+          let costPriceToUse = product.costPrice
+          if (item.productVariantId) {
+            variant = await tx.productVariant.findFirst({
+              where: {
+                id: item.productVariantId,
+                productId: item.productId,
+                tenantId: user.tenantId,
+                isActive: true,
+              },
+            })
+
+            if (!variant) {
+              throw new Error(`Product variant ${item.productVariantId} not found`)
+            }
+
+            costPriceToUse = variant.costPrice
+          }
+
+          // Check stock (either for variant or product)
           console.log(`[SALES API TX] Checking stock at location:`, locationId)
           const stock = await tx.stock.findFirst({
-            where: {
-              productId: item.productId,
-              locationId,
-            },
+            where: item.productVariantId
+              ? {
+                  productVariantId: item.productVariantId,
+                  locationId,
+                }
+              : {
+                  productId: item.productId,
+                  locationId,
+                },
           })
           console.log(`[SALES API TX] Stock found:`, stock?.quantity)
 
           if (!stock || stock.quantity < item.quantity) {
-            throw new Error(`Insufficient stock for product ${product.name}`)
+            const itemName = variant ? `${product.name} (${JSON.parse(variant.variantValues)})` : product.name
+            throw new Error(`Insufficient stock for ${itemName}`)
           }
 
           // Calculate item totals applying item-level discount.
@@ -283,9 +311,10 @@ export async function POST(req: Request) {
 
           return {
             productId: item.productId,
+            productVariantId: item.productVariantId,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
-            costPrice: product.costPrice ?? null,
+            costPrice: costPriceToUse ?? null,
             subtotal: itemSubtotal,
             taxRate: item.taxRate,
             taxAmount: itemTaxAmount,
@@ -378,27 +407,44 @@ export async function POST(req: Request) {
 
       // Update stock and create stock movements
       for (const item of validatedData.items) {
-        // Update stock
-        await tx.stock.update({
-          where: {
-            productId_locationId: {
-              productId: item.productId,
-              locationId,
+        // Update stock (either for variant or product)
+        if (item.productVariantId) {
+          await tx.stock.update({
+            where: {
+              productVariantId_locationId: {
+                productVariantId: item.productVariantId,
+                locationId,
+              },
             },
-          },
-          data: {
-            quantity: {
-              decrement: item.quantity,
+            data: {
+              quantity: {
+                decrement: item.quantity,
+              },
             },
-          },
-        })
+          })
+        } else {
+          await tx.stock.update({
+            where: {
+              productId_locationId: {
+                productId: item.productId,
+                locationId,
+              },
+            },
+            data: {
+              quantity: {
+                decrement: item.quantity,
+              },
+            },
+          })
+        }
 
         // Create stock movement
         await tx.stockMovement.create({
           data: {
             type: "SALE",
             quantity: -item.quantity,
-            productId: item.productId,
+            productId: item.productVariantId ? null : item.productId,
+            productVariantId: item.productVariantId || null,
             userId: user.id,
             saleId: newSale.id,
             reason: `Venta ${saleNumber}`,

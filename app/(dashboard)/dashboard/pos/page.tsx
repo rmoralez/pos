@@ -24,6 +24,16 @@ import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts"
 import Link from "next/link"
 import { calculateDiscountAmount, type DiscountType } from "@/lib/pricing"
 import { CustomerSelector, type Customer } from "@/components/pos/customer-selector"
+import { VariantSelectorDialog } from "@/components/pos/variant-selector-dialog"
+
+interface ProductVariant {
+  id: string
+  sku: string
+  variantValues: string
+  salePrice: string
+  costPrice: string
+  Stock: Array<{ quantity: number }>
+}
 
 interface Product {
   id: string
@@ -32,6 +42,8 @@ interface Product {
   salePrice: number
   taxRate: number
   stock: Array<{ quantity: number }>
+  hasVariants?: boolean
+  ProductVariant?: ProductVariant[]
 }
 
 interface CartItem {
@@ -40,6 +52,7 @@ interface CartItem {
   subtotal: number
   taxAmount: number
   total: number
+  variant?: ProductVariant
 }
 
 export default function POSPage() {
@@ -55,6 +68,8 @@ export default function POSPage() {
   const [initialPaymentMethod, setInitialPaymentMethod] = useState<string>("CASH")
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [showVariantSelector, setShowVariantSelector] = useState(false)
+  const [selectedProductForVariant, setSelectedProductForVariant] = useState<Product | null>(null)
 
   // Refs for focusing inputs via keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -104,6 +119,14 @@ export default function POSPage() {
   }, [search, searchProducts])
 
   const addToCart = (product: Product) => {
+    // Check if product has variants
+    if (product.hasVariants && product.ProductVariant && product.ProductVariant.length > 0) {
+      // Show variant selector
+      setSelectedProductForVariant(product)
+      setShowVariantSelector(true)
+      return
+    }
+
     const stockTotal = product.stock.reduce((acc, s) => acc + s.quantity, 0)
 
     if (stockTotal === 0) {
@@ -115,7 +138,7 @@ export default function POSPage() {
       return
     }
 
-    const existingItem = cart.find(item => item.product.id === product.id)
+    const existingItem = cart.find(item => item.product.id === product.id && !item.variant)
 
     if (existingItem) {
       if (existingItem.quantity >= stockTotal) {
@@ -142,6 +165,71 @@ export default function POSPage() {
         total,
       }])
       // Don't clear search - allows adding multiple items quickly
+    }
+  }
+
+  const addVariantToCart = (variant: ProductVariant) => {
+    if (!selectedProductForVariant) return
+
+    const stockTotal = variant.Stock.reduce((acc, s) => acc + s.quantity, 0)
+
+    if (stockTotal === 0) {
+      toast({
+        title: "Sin stock",
+        description: "Esta variante no tiene stock disponible",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Check if this exact variant is already in cart
+    const existingItem = cart.find(
+      item => item.product.id === selectedProductForVariant.id && item.variant?.id === variant.id
+    )
+
+    if (existingItem) {
+      if (existingItem.quantity >= stockTotal) {
+        toast({
+          title: "Stock insuficiente",
+          description: `Solo hay ${stockTotal} unidades disponibles`,
+          variant: "destructive",
+        })
+        return
+      }
+      // Update quantity for this specific variant
+      setCart(cart.map(item => {
+        if (item.product.id === selectedProductForVariant.id && item.variant?.id === variant.id) {
+          const newQuantity = item.quantity + 1
+          const total = Number(variant.salePrice) * newQuantity
+          const taxRate = Number(selectedProductForVariant.taxRate)
+          const subtotal = total / (1 + taxRate / 100)
+          const taxAmount = total - subtotal
+
+          return {
+            ...item,
+            quantity: newQuantity,
+            subtotal,
+            taxAmount,
+            total,
+          }
+        }
+        return item
+      }))
+    } else {
+      // salePrice already includes tax - we just extract it for display purposes
+      const total = Number(variant.salePrice)
+      const taxRate = Number(selectedProductForVariant.taxRate)
+      const subtotal = total / (1 + taxRate / 100)
+      const taxAmount = total - subtotal
+
+      setCart([...cart, {
+        product: selectedProductForVariant,
+        variant,
+        quantity: 1,
+        subtotal,
+        taxAmount,
+        total,
+      }])
     }
   }
 
@@ -483,49 +571,71 @@ export default function POSPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {cart.map((item) => (
-                    <div
-                      key={item.product.id}
-                      className="flex items-center gap-4 p-3 border rounded-lg"
-                    >
-                      <div className="flex-1">
-                        <p className="font-medium">{item.product.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          ${item.product.salePrice.toLocaleString("es-AR")} x {item.quantity}
-                        </p>
+                  {cart.map((item, index) => {
+                    const itemPrice = item.variant ? Number(item.variant.salePrice) : item.product.salePrice
+                    const parseVariantValues = (variantValues: string): Record<string, string> => {
+                      try {
+                        return JSON.parse(variantValues)
+                      } catch {
+                        return {}
+                      }
+                    }
+
+                    return (
+                      <div
+                        key={item.variant ? `${item.product.id}-${item.variant.id}` : `${item.product.id}-${index}`}
+                        className="flex items-center gap-4 p-3 border rounded-lg"
+                      >
+                        <div className="flex-1">
+                          <p className="font-medium">{item.product.name}</p>
+                          {item.variant && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {Object.entries(parseVariantValues(item.variant.variantValues)).map(
+                                ([key, value]) => (
+                                  <Badge key={key} variant="secondary" className="text-xs">
+                                    {key}: {value}
+                                  </Badge>
+                                )
+                              )}
+                            </div>
+                          )}
+                          <p className="text-sm text-muted-foreground mt-1">
+                            ${itemPrice.toLocaleString("es-AR")} x {item.quantity}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                            aria-label="Minus"
+                          >
+                            <Minus className="h-4 w-4" />
+                          </Button>
+                          <span className="w-12 text-center font-medium">{item.quantity}</span>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                            aria-label="Plus"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeFromCart(item.product.id)}
+                            aria-label="Delete"
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold">${item.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
-                          aria-label="Minus"
-                        >
-                          <Minus className="h-4 w-4" />
-                        </Button>
-                        <span className="w-12 text-center font-medium">{item.quantity}</span>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                          aria-label="Plus"
-                        >
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeFromCart(item.product.id)}
-                          aria-label="Delete"
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold">${item.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</p>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </CardContent>
@@ -725,6 +835,17 @@ export default function POSPage() {
         initialPaymentMethod={initialPaymentMethod}
         customerId={selectedCustomer?.id ?? null}
         customerName={selectedCustomer?.name ?? null}
+      />
+
+      <VariantSelectorDialog
+        open={showVariantSelector}
+        onClose={() => {
+          setShowVariantSelector(false)
+          setSelectedProductForVariant(null)
+        }}
+        productName={selectedProductForVariant?.name || ""}
+        variants={selectedProductForVariant?.ProductVariant || []}
+        onSelectVariant={addVariantToCart}
       />
 
       <KeyboardShortcutsHelp

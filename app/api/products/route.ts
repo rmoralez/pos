@@ -83,6 +83,16 @@ export async function GET(req: Request) {
         stock: {
           where: user.locationId ? { locationId: user.locationId } : undefined,
         },
+        ProductVariant: {
+          where: {
+            isActive: true,
+          },
+          include: {
+            Stock: {
+              where: user.locationId ? { locationId: user.locationId } : undefined,
+            },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     })

@@ -64,7 +64,13 @@
       "Bash(grep:*)",
       "Bash(npm run dev:*)",
       "Bash(while ! grep -qE \"^\\s+[0-9]+ (passed|failed)\" /tmp/final-stable-e2e-clean.log)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(PGPASSWORD=pos_password psql:*)",
+      "Bash(for table in CashWithdrawal PaymentMethodAccount ProductPriceHistory ProductVariant PurchaseOrder SupplierAccount SupplierInvoice SupplierPayment)",
+      "Bash(do echo \"=== $table ===\" PGPASSWORD=pos_password psql -h localhost -U pos_user -d pos_db_fresh -c \"\\d \"\"$table\"\"\")",
+      "Bash(DATABASE_URL=\"postgresql://pos_user:pos_password@localhost:5432/pos_db_fresh\" npx prisma db pull:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npm run lint:*)"
     ],
     "deny": [],
     "ask": []
