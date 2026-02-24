@@ -70,22 +70,30 @@ export async function GET(req: Request) {
       const normalizedSearch = normalizeSearchText(search)
       const searchPattern = prepareSearchTerm(normalizedSearch)
 
+      // Build WHERE conditions dynamically
+      let whereConditions = `p."tenantId" = '${user.tenantId}'`
+      if (category) {
+        whereConditions += ` AND p."categoryId" = '${category}'`
+      }
+      if (isActive !== null) {
+        whereConditions += ` AND p."isActive" = ${isActive === "true"}`
+      }
+
       // Use raw SQL for accent-insensitive search
       // We search in: name, sku, barcode, and alternative codes
-      const productIds = await prisma.$queryRaw<Array<{ id: string }>>`
-        SELECT DISTINCT p.id
+      const productIds = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT DISTINCT p.id
         FROM "Product" p
         LEFT JOIN "ProductAlternativeCode" pac ON p.id = pac."productId"
-        WHERE p."tenantId" = ${user.tenantId}
-          ${category ? prisma.$queryRawUnsafe(`AND p."categoryId" = '${category}'`) : prisma.$queryRawUnsafe('')}
-          ${isActive !== null ? prisma.$queryRawUnsafe(`AND p."isActive" = ${isActive === "true"}`) : prisma.$queryRawUnsafe('')}
+        WHERE ${whereConditions}
           AND (
-            LOWER(regexp_replace(p.name, '[^a-zA-Z0-9 ]', '', 'g')) LIKE ${searchPattern}
-            OR LOWER(regexp_replace(p.sku, '[^a-zA-Z0-9 ]', '', 'g')) LIKE ${searchPattern}
-            OR LOWER(regexp_replace(COALESCE(p.barcode, ''), '[^a-zA-Z0-9 ]', '', 'g')) LIKE ${searchPattern}
-            OR LOWER(regexp_replace(COALESCE(pac.code, ''), '[^a-zA-Z0-9 ]', '', 'g')) LIKE ${searchPattern}
-          )
-      `
+            LOWER(regexp_replace(p.name, '[^a-zA-Z0-9 ]', '', 'g')) LIKE $1
+            OR LOWER(regexp_replace(p.sku, '[^a-zA-Z0-9 ]', '', 'g')) LIKE $1
+            OR LOWER(regexp_replace(COALESCE(p.barcode, ''), '[^a-zA-Z0-9 ]', '', 'g')) LIKE $1
+            OR LOWER(regexp_replace(COALESCE(pac.code, ''), '[^a-zA-Z0-9 ]', '', 'g')) LIKE $1
+          )`,
+        searchPattern
+      )
 
       // Fetch full products with relations
       products = await prisma.product.findMany({
