@@ -215,11 +215,11 @@ export default function StockPage() {
   }
 
   const getLowStockCount = () => {
-    return stockItems.filter((item) => item.quantity <= item.product.minStock).length
+    return stockItems.filter((item) => item.product && item.quantity <= item.product.minStock).length
   }
 
   const getTotalProducts = () => {
-    return stockItems.length
+    return stockItems.filter((item) => item.product !== null).length
   }
 
   const getTotalQuantity = () => {
@@ -350,7 +350,7 @@ export default function StockPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {stockItems.map((item) => {
+                      {stockItems.filter((item) => item.product !== null).map((item) => {
                         const isLowStock = item.quantity <= item.product.minStock
                         return (
                           <TableRow key={item.id}>
@@ -492,7 +492,7 @@ export default function StockPage() {
                   <SelectValue placeholder="Selecciona un producto" />
                 </SelectTrigger>
                 <SelectContent>
-                  {stockItems.map((item) => (
+                  {stockItems.filter((item) => item.product !== null).map((item) => (
                     <SelectItem key={item.product.id} value={item.product.id}>
                       {item.product.name} ({item.product.sku}) - Stock: {item.quantity}
                     </SelectItem>
