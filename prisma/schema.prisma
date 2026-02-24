@@ -18,9 +18,15 @@ model Tenant {
   province                 String?
   zipCode                  String?
   defaultTaxRate           Decimal                   @default(21.0) @db.Decimal(5, 2)
-  afipCert                 String?
-  afipKey                  String?
-  afipPuntoVenta           Int?
+  afipMode                 String?                   @default("homologacion") // "homologacion" | "produccion"
+  afipCert                 String?                   @db.Text // Certificado X.509 en formato PEM
+  afipKey                  String?                   @db.Text // Clave privada en formato PEM
+  afipPuntoVenta           Int?                      @default(1)
+  afipToken                String?                   @db.Text // Token obtenido de WSAA
+  afipSign                 String?                   @db.Text // Firma obtenida de WSAA
+  afipTokenExpiresAt       DateTime? // Fecha de expiración del token
+  afipDefaultInvoiceType   String?                   @default("B") // A, B, C
+  afipEnabled              Boolean                   @default(false)
   isActive                 Boolean                   @default(true)
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt

@@ -55,6 +55,7 @@ import { MovementTypesTab } from "@/components/settings/movement-types-tab"
 import { PaymentMethodAccountsTab } from "@/components/settings/payment-method-accounts-tab"
 import { DenominationsTab } from "@/components/settings/denominations-tab"
 import { VariantAttributesTab } from "@/components/settings/variant-attributes-tab"
+import { AfipTab } from "@/components/settings/afip-tab"
 import { CategoryTree, type Category } from "@/components/categories/category-tree"
 import { CategoryDialog } from "@/components/categories/category-dialog"
 
@@ -960,44 +961,7 @@ export default function SettingsPage() {
 
         {/* AFIP Tab */}
         <TabsContent value="afip" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Configuración AFIP</CardTitle>
-              <CardDescription>
-                Configuración de facturación electrónica
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="afipPuntoVenta">Punto de Venta</Label>
-                <Input
-                  id="afipPuntoVenta"
-                  type="number"
-                  placeholder="1"
-                  value={tenantForm.afipPuntoVenta}
-                  onChange={(e) =>
-                    setTenantForm({ ...tenantForm, afipPuntoVenta: e.target.value })
-                  }
-                />
-                <p className="text-sm text-muted-foreground">
-                  Número de punto de venta asignado por AFIP
-                </p>
-              </div>
-
-              <div className="flex justify-end">
-                <Button onClick={handleSaveTenant}>
-                  <Save className="mr-2 h-4 w-4" />
-                  Guardar Configuración AFIP
-                </Button>
-              </div>
-
-              <div className="mt-6 p-4 bg-muted rounded-lg">
-                <p className="text-sm text-muted-foreground">
-                  La configuración de certificados y claves AFIP se realizará en una versión futura.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <AfipTab />
         </TabsContent>
       </Tabs>
 
