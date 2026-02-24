@@ -32,7 +32,21 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Búsqueda de Productos",
     shortcuts: [
       { keys: ["F5", "/"], description: "Focus en búsqueda de productos" },
-      { keys: ["Enter"], description: "Agregar primer resultado al carrito (desde búsqueda)" },
+      { keys: ["↑", "↓"], description: "Navegar entre resultados de búsqueda" },
+      { keys: ["Enter"], description: "Agregar producto seleccionado al carrito" },
+    ],
+  },
+  {
+    title: "Búsqueda Avanzada",
+    shortcuts: [
+      { keys: ["*"], description: "Usar wildcards en búsqueda (ej: cam* encuentra cámara, campera)" },
+      { keys: [""], description: "Búsqueda sin acentos: 'camara' encuentra 'cámara'" },
+    ],
+  },
+  {
+    title: "Cantidad Rápida",
+    shortcuts: [
+      { keys: ["número + Enter"], description: "Establecer cantidad para próximo producto (ej: 20 + Enter)" },
     ],
   },
   {

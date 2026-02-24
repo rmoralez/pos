@@ -735,10 +735,6 @@ export default function POSPage() {
                     aria-keyshortcuts="F5 /"
                   />
                 </div>
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <p>💡 <strong>Cantidad rápida:</strong> Escribe un número (ej: &quot;20&quot;) y presiona Enter para establecer la cantidad del próximo producto.</p>
-                  <p>🔍 <strong>Búsqueda mejorada:</strong> Usa flechas ↑↓ para navegar, Enter para agregar. Soporta wildcards (*) y búsqueda sin acentos.</p>
-                </div>
                 {pendingQuantity > 1 && (
                   <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
                     <Badge variant="default" className="bg-blue-600">
