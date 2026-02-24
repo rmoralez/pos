@@ -444,17 +444,46 @@ export function AfipTab() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex gap-2">
               <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-blue-800">
+              <div className="text-sm text-blue-800 w-full">
                 <strong>¿Cómo obtener los certificados?</strong>
-                <ol className="list-decimal list-inside mt-2 space-y-1">
-                  <li>Ingresá a AFIP con Clave Fiscal</li>
-                  <li>
-                    Andá a &quot;Administrador de Relaciones de Clave Fiscal&quot;
-                  </li>
-                  <li>Seleccioná &quot;Nueva Relación&quot;</li>
-                  <li>Buscá el servicio &quot;wsfe&quot; (Facturación Electrónica)</li>
-                  <li>Generá el certificado y descargá los archivos</li>
-                </ol>
+
+                <div className="mt-3 mb-3 bg-white p-3 rounded border border-blue-300">
+                  <strong>Paso 1: Generar CSR y Clave Privada (en tu computadora)</strong>
+                  <div className="bg-gray-900 text-gray-100 p-3 rounded mt-2 font-mono text-xs overflow-x-auto">
+                    openssl req -new -newkey rsa:2048 -nodes \<br/>
+                    &nbsp;&nbsp;-keyout afip.key -out afip.csr \<br/>
+                    &nbsp;&nbsp;-subj &quot;/C=AR/O=TU_EMPRESA/CN=TU_EMPRESA/serialNumber=CUIT TU_CUIT&quot;
+                  </div>
+                  <p className="text-xs mt-2">
+                    Esto genera: <code className="bg-gray-100 px-1 py-0.5 rounded">afip.key</code> (clave privada) y <code className="bg-gray-100 px-1 py-0.5 rounded">afip.csr</code> (solicitud)
+                  </p>
+                </div>
+
+                <div className="bg-white p-3 rounded border border-blue-300">
+                  <strong>Paso 2: Subir CSR a AFIP</strong>
+                  <ol className="list-decimal list-inside mt-2 space-y-1.5 ml-2">
+                    <li>Ingresá a AFIP con Clave Fiscal</li>
+                    <li>Andá a &quot;Administrador de Relaciones de Clave Fiscal&quot;</li>
+                    <li>Seleccioná &quot;Nueva Relación&quot;</li>
+                    <li>Buscá el servicio &quot;wsfe&quot; (Facturación Electrónica)</li>
+                    <li>Seleccioná &quot;Generar nueva solicitud&quot;</li>
+                    <li className="space-y-1">
+                      <span>Copiá el contenido de <code className="bg-gray-100 px-1 py-0.5 rounded">afip.csr</code> y pegalo en AFIP:</span>
+                      <div className="bg-gray-900 text-gray-100 p-2 rounded font-mono text-xs">
+                        cat afip.csr
+                      </div>
+                    </li>
+                    <li>AFIP te devuelve el certificado firmado → copialo y guardalo como <code className="bg-gray-100 px-1 py-0.5 rounded">afip.crt</code></li>
+                  </ol>
+                </div>
+
+                <div className="mt-3 p-3 bg-yellow-50 border border-yellow-300 rounded">
+                  <strong className="text-yellow-900">⚠️ Importante:</strong>
+                  <ul className="list-disc list-inside text-xs mt-1.5 space-y-1">
+                    <li>Guardá <code className="bg-gray-100 px-1 py-0.5 rounded">afip.key</code> en lugar seguro (NUNCA lo compartas)</li>
+                    <li>Necesitás ambos archivos para subir acá: <code className="bg-gray-100 px-1 py-0.5 rounded">afip.crt</code> y <code className="bg-gray-100 px-1 py-0.5 rounded">afip.key</code></li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
