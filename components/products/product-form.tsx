@@ -34,10 +34,20 @@ interface Category {
   children?: Category[]
 }
 
+interface Supplier {
+  id: string
+  name: string
+}
+
 interface AlternativeCode {
   id: string
   code: string
   label: string | null
+  supplierId: string | null
+  Supplier?: {
+    id: string
+    name: string
+  } | null
 }
 
 // Pending entry used only during new product creation (before the product has an id)
@@ -45,12 +55,14 @@ interface PendingCode {
   tempId: string
   code: string
   label: string
+  supplierId: string | null
 }
 
 export function ProductForm({ productId, initialData }: ProductFormProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [categories, setCategories] = useState<Category[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [defaultTaxRate, setDefaultTaxRate] = useState<number>(21)
 
   // Alternative codes — for existing products these are loaded from API
@@ -59,7 +71,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
   )
   // Pending codes — only used when creating a new product
   const [pendingCodes, setPendingCodes] = useState<PendingCode[]>([])
-  const [newCodeInput, setNewCodeInput] = useState({ code: "", label: "" })
+  const [newCodeInput, setNewCodeInput] = useState({ code: "", label: "", supplierId: null as string | null })
   const [altCodeLoading, setAltCodeLoading] = useState(false)
 
   // Calculate initial margin if both prices are present (tax-aware)
@@ -99,6 +111,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
 
   useEffect(() => {
     fetchCategories()
+    fetchSuppliers()
     fetchTenantTaxRate()
   }, [])
 
@@ -171,6 +184,18 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
     }
   }
 
+  const fetchSuppliers = async () => {
+    try {
+      const response = await fetch("/api/suppliers")
+      if (response.ok) {
+        const data = await response.json()
+        setSuppliers(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch suppliers:", error)
+    }
+  }
+
   // --- Alternative codes handlers ---
 
   const handleAddCode = async () => {
@@ -183,7 +208,11 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
         const res = await fetch(`/api/products/${productId}/alternative-codes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: newCodeInput.code.trim(), label: newCodeInput.label.trim() || undefined }),
+          body: JSON.stringify({
+            code: newCodeInput.code.trim(),
+            label: newCodeInput.label.trim() || undefined,
+            supplierId: newCodeInput.supplierId || undefined,
+          }),
         })
         if (!res.ok) {
           const err = await res.json()
@@ -191,7 +220,7 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
         }
         const created: AlternativeCode = await res.json()
         setAltCodes((prev) => [...prev, created])
-        setNewCodeInput({ code: "", label: "" })
+        setNewCodeInput({ code: "", label: "", supplierId: null })
       } catch (err: any) {
         toast({ title: "Error", description: err.message, variant: "destructive" })
       } finally {
@@ -201,9 +230,14 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
       // New product: queue locally
       setPendingCodes((prev) => [
         ...prev,
-        { tempId: crypto.randomUUID(), code: newCodeInput.code.trim(), label: newCodeInput.label.trim() },
+        {
+          tempId: crypto.randomUUID(),
+          code: newCodeInput.code.trim(),
+          label: newCodeInput.label.trim(),
+          supplierId: newCodeInput.supplierId,
+        },
       ])
-      setNewCodeInput({ code: "", label: "" })
+      setNewCodeInput({ code: "", label: "", supplierId: null })
     }
   }
 
@@ -341,7 +375,11 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
             fetch(`/api/products/${newProduct.id}/alternative-codes`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ code: pc.code, label: pc.label || undefined }),
+              body: JSON.stringify({
+                code: pc.code,
+                label: pc.label || undefined,
+                supplierId: pc.supplierId || undefined,
+              }),
             })
           )
         )
@@ -732,10 +770,24 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
             <div className="space-y-2">
               {altCodes.map((ac) => (
                 <div key={ac.id} className="flex items-center gap-2 rounded-md border px-3 py-2">
-                  <span className="font-mono text-sm font-medium flex-shrink-0">{ac.code}</span>
-                  {ac.label && (
-                    <span className="text-sm text-muted-foreground flex-1 truncate">{ac.label}</span>
-                  )}
+                  <div className="flex-1 flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-medium flex-shrink-0">{ac.code}</span>
+                      {ac.Supplier && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                          {ac.Supplier.name}
+                        </span>
+                      )}
+                      {!ac.Supplier && ac.label && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                          Otros
+                        </span>
+                      )}
+                    </div>
+                    {ac.label && (
+                      <span className="text-sm text-muted-foreground truncate">{ac.label}</span>
+                    )}
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
@@ -754,62 +806,105 @@ export function ProductForm({ productId, initialData }: ProductFormProps) {
           {/* Pending codes (create mode) */}
           {pendingCodes.length > 0 && (
             <div className="space-y-2">
-              {pendingCodes.map((pc) => (
-                <div key={pc.tempId} className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2 bg-muted/30">
-                  <span className="font-mono text-sm font-medium flex-shrink-0">{pc.code}</span>
-                  {pc.label && (
-                    <span className="text-sm text-muted-foreground flex-1 truncate">{pc.label}</span>
-                  )}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 ml-auto text-muted-foreground hover:text-destructive flex-shrink-0"
-                    onClick={() => handleDeletePending(pc.tempId)}
-                    disabled={isLoading}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+              {pendingCodes.map((pc) => {
+                const supplier = suppliers.find(s => s.id === pc.supplierId)
+                return (
+                  <div key={pc.tempId} className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2 bg-muted/30">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-medium flex-shrink-0">{pc.code}</span>
+                        {supplier && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                            {supplier.name}
+                          </span>
+                        )}
+                        {!supplier && pc.label && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                            Otros
+                          </span>
+                        )}
+                      </div>
+                      {pc.label && (
+                        <span className="text-sm text-muted-foreground truncate">{pc.label}</span>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 ml-auto text-muted-foreground hover:text-destructive flex-shrink-0"
+                      onClick={() => handleDeletePending(pc.tempId)}
+                      disabled={isLoading}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )
+              })}
             </div>
           )}
 
           {/* Add new code input */}
-          <div className="flex gap-2">
-            <div className="space-y-1 flex-1">
-              <Input
-                placeholder="Código *"
-                value={newCodeInput.code}
-                onChange={(e) => setNewCodeInput({ ...newCodeInput, code: e.target.value })}
-                onKeyDown={handleCodeKeyDown}
-                disabled={altCodeLoading || isLoading}
-                className="font-mono"
-              />
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <div className="space-y-1 flex-[1.5]">
+                <Select
+                  value={newCodeInput.supplierId || "otros"}
+                  onValueChange={(value) =>
+                    setNewCodeInput({
+                      ...newCodeInput,
+                      supplierId: value === "otros" ? null : value
+                    })
+                  }
+                  disabled={altCodeLoading || isLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Proveedor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="otros">Otros</SelectItem>
+                    {suppliers.map((supplier) => (
+                      <SelectItem key={supplier.id} value={supplier.id}>
+                        {supplier.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1 flex-1">
+                <Input
+                  placeholder="Código *"
+                  value={newCodeInput.code}
+                  onChange={(e) => setNewCodeInput({ ...newCodeInput, code: e.target.value })}
+                  onKeyDown={handleCodeKeyDown}
+                  disabled={altCodeLoading || isLoading}
+                  className="font-mono"
+                />
+              </div>
+              <div className="space-y-1 flex-[2]">
+                <Input
+                  placeholder="Etiqueta (ej: Descripción del código)"
+                  value={newCodeInput.label}
+                  onChange={(e) => setNewCodeInput({ ...newCodeInput, label: e.target.value })}
+                  onKeyDown={handleCodeKeyDown}
+                  disabled={altCodeLoading || isLoading}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleAddCode}
+                disabled={!newCodeInput.code.trim() || altCodeLoading || isLoading}
+                className="flex-shrink-0"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
             </div>
-            <div className="space-y-1 flex-[2]">
-              <Input
-                placeholder="Etiqueta (ej: Código proveedor ABC)"
-                value={newCodeInput.label}
-                onChange={(e) => setNewCodeInput({ ...newCodeInput, label: e.target.value })}
-                onKeyDown={handleCodeKeyDown}
-                disabled={altCodeLoading || isLoading}
-              />
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={handleAddCode}
-              disabled={!newCodeInput.code.trim() || altCodeLoading || isLoading}
-              className="flex-shrink-0"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
+            <p className="text-sm text-muted-foreground">
+              Presioná Enter o el botón + para agregar. El código es requerido, la etiqueta es opcional.
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Presioná Enter o el botón + para agregar. El código es requerido, la etiqueta es opcional.
-          </p>
         </CardContent>
       </Card>
 

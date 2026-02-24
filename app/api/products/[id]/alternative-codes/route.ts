@@ -6,6 +6,7 @@ import { z } from "zod"
 const alternativeCodeSchema = z.object({
   code: z.string().min(1),
   label: z.string().optional(),
+  supplierId: z.string().optional(),
 })
 
 export async function GET(
@@ -29,6 +30,14 @@ export async function GET(
 
     const codes = await prisma.productAlternativeCode.findMany({
       where: { productId: params.id },
+      include: {
+        Supplier: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
       orderBy: { createdAt: "asc" },
     })
 
@@ -70,6 +79,15 @@ export async function POST(
         productId: params.id,
         code: validatedData.code,
         label: validatedData.label,
+        supplierId: validatedData.supplierId,
+      },
+      include: {
+        Supplier: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     })
 
