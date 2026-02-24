@@ -12,6 +12,7 @@ import { toast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { PaymentDialog } from "@/components/pos/payment-dialog"
 
 interface Product {
   id: string
@@ -85,6 +86,7 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   const [cartDiscount, setCartDiscount] = useState<number>(0)
   const [validUntil, setValidUntil] = useState<string>("")
   const [notes, setNotes] = useState<string>("")
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false)
 
   useEffect(() => {
     fetchQuote()
@@ -323,37 +325,45 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
     }
   }
 
-  const handleConvert = async () => {
+  const handleConvert = () => {
     if (!quote) return
-    if (!confirm(`¿Desea convertir el presupuesto ${quote.quoteNumber} en una venta?`)) {
-      return
-    }
+    setShowPaymentDialog(true)
+  }
 
+  const handlePaymentSuccess = async () => {
+    if (!quote) return
+
+    // Mark quote as converted
     try {
-      const response = await fetch(`/api/quotes/${params.id}/convert`, {
-        method: "POST",
+      await fetch(`/api/quotes/${params.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...quote,
+          status: "CONVERTED",
+          items: quote.items.map(item => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+            unitPrice: Number(item.unitPrice),
+            taxRate: Number(item.product.taxRate),
+            discount: Number(item.discount),
+          })),
+          customerId: quote.customer?.id,
+          discountAmount: Number(quote.discountAmount),
+          validUntil: quote.validUntil || undefined,
+          notes: quote.notes || undefined,
+        }),
       })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || "Failed to convert quote")
-      }
-
-      const sale = await response.json()
-
-      toast({
-        title: "Presupuesto convertido",
-        description: `El presupuesto ${quote.quoteNumber} ha sido convertido a venta ${sale.saleNumber}`,
-      })
-
-      fetchQuote()
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo convertir el presupuesto",
-        variant: "destructive",
-      })
+    } catch (error) {
+      console.error("Error updating quote status:", error)
     }
+
+    setShowPaymentDialog(false)
+    toast({
+      title: "Venta completada",
+      description: `El presupuesto ${quote.quoteNumber} ha sido convertido a venta exitosamente`,
+    })
+    router.push("/dashboard/sales")
   }
 
   const handleDownloadPDF = () => {
@@ -737,6 +747,38 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
             </Card>
           </div>
         </div>
+      )}
+
+      {/* Payment Dialog */}
+      {showPaymentDialog && quote && (
+        <PaymentDialog
+          open={showPaymentDialog}
+          onClose={() => setShowPaymentDialog(false)}
+          cart={quote.items.map(item => ({
+            product: {
+              ...item.product,
+              salePrice: item.unitPrice,
+            },
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            taxRate: item.product.taxRate,
+            discount: item.discount,
+            discountType: "PERCENTAGE" as const,
+            discountValue: item.discount,
+            subtotal: item.total,
+            taxAmount: 0,
+            total: item.total,
+          }))}
+          totals={{
+            total: Number(quote.total),
+            cartDiscountAmount: Number(quote.discountAmount),
+            cartDiscountType: "FIXED" as const,
+            cartDiscountValue: Number(quote.discountAmount),
+          }}
+          onSuccess={handlePaymentSuccess}
+          customerId={quote.customer?.id || null}
+          customerName={quote.customer?.name || null}
+        />
       )}
     </div>
   )
