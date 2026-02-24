@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Search, Plus, Minus, Trash2, ShoppingCart, DollarSign, AlertCircle, Tag } from "lucide-react"
+import { Search, Plus, Minus, Trash2, ShoppingCart, DollarSign, AlertCircle, Tag, Pause } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { PaymentDialog } from "@/components/pos/payment-dialog"
 import { KeyboardShortcutsHelp, KeyboardShortcutsTrigger } from "@/components/pos/keyboard-shortcuts-help"
@@ -26,6 +26,7 @@ import { calculateDiscountAmount, type DiscountType } from "@/lib/pricing"
 import { CustomerSelector, type Customer } from "@/components/pos/customer-selector"
 import { VariantSelectorDialog } from "@/components/pos/variant-selector-dialog"
 import { ItemDiscountDialog } from "@/components/pos/item-discount-dialog"
+import { SuspendedSalesDialog } from "@/components/pos/suspended-sales-dialog"
 
 interface ProductVariant {
   id: string
@@ -58,6 +59,15 @@ interface CartItem {
   discountValue: number
 }
 
+interface SuspendedSale {
+  id: string
+  cart: CartItem[]
+  customer: Customer | null
+  cartDiscountType: DiscountType
+  cartDiscountValue: number
+  timestamp: number
+}
+
 export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [search, setSearch] = useState("")
@@ -77,6 +87,8 @@ export default function POSPage() {
   const [selectedItemForDiscount, setSelectedItemForDiscount] = useState<{index: number, item: CartItem} | null>(null)
   const [selectedProductIndex, setSelectedProductIndex] = useState<number>(0)
   const [pendingQuantity, setPendingQuantity] = useState<number>(1)
+  const [suspendedSales, setSuspendedSales] = useState<SuspendedSale[]>([])
+  const [showSuspendedSales, setShowSuspendedSales] = useState(false)
 
   // Refs for focusing inputs via keyboard shortcuts
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -98,6 +110,27 @@ export default function POSPage() {
 
     checkCashRegister()
   }, [])
+
+  // Load suspended sales from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("pos-suspended-sales")
+      if (stored) {
+        setSuspendedSales(JSON.parse(stored))
+      }
+    } catch (error) {
+      console.error("Error loading suspended sales:", error)
+    }
+  }, [])
+
+  // Save suspended sales to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem("pos-suspended-sales", JSON.stringify(suspendedSales))
+    } catch (error) {
+      console.error("Error saving suspended sales:", error)
+    }
+  }, [suspendedSales])
 
   const searchProducts = useCallback(async () => {
     try {
@@ -433,6 +466,57 @@ export default function POSPage() {
         description: `${selectedProduct.name} x${qty} agregado al carrito`,
       })
     }
+  }
+
+  const handleSuspendSale = () => {
+    if (cart.length === 0) {
+      toast({
+        title: "Carrito vacío",
+        description: "No hay productos para suspender",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const suspended: SuspendedSale = {
+      id: Date.now().toString(),
+      cart: [...cart],
+      customer: selectedCustomer,
+      cartDiscountType,
+      cartDiscountValue,
+      timestamp: Date.now(),
+    }
+
+    setSuspendedSales([...suspendedSales, suspended])
+    clearCart()
+    toast({
+      title: "Venta suspendida",
+      description: "La venta ha sido guardada. Puedes retomarla más tarde.",
+    })
+  }
+
+  const handleResumeSale = (sale: SuspendedSale) => {
+    setCart(sale.cart)
+    setSelectedCustomer(sale.customer)
+    setCartDiscountType(sale.cartDiscountType)
+    setCartDiscountValue(sale.cartDiscountValue)
+
+    // Remove from suspended sales
+    setSuspendedSales(suspendedSales.filter(s => s.id !== sale.id))
+    setShowSuspendedSales(false)
+
+    toast({
+      title: "Venta retomada",
+      description: "La venta ha sido cargada al carrito",
+    })
+  }
+
+  const handleDeleteSuspendedSale = (saleId: string) => {
+    setSuspendedSales(suspendedSales.filter(s => s.id !== saleId))
+    toast({
+      title: "Venta eliminada",
+      description: "La venta suspendida ha sido eliminada",
+    })
   }
 
   const handlePaymentSuccess = () => {
@@ -1033,6 +1117,36 @@ export default function POSPage() {
                     </kbd>
                   </span>
                 </Button>
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  onClick={handleSuspendSale}
+                  disabled={cart.length === 0}
+                >
+                  <span className="flex items-center justify-center gap-2">
+                    <Pause className="h-4 w-4" />
+                    Suspender Venta
+                    {suspendedSales.length > 0 && (
+                      <Badge variant="secondary" className="ml-1">
+                        {suspendedSales.length}
+                      </Badge>
+                    )}
+                  </span>
+                </Button>
+                {suspendedSales.length > 0 && (
+                  <Button
+                    className="w-full"
+                    variant="default"
+                    onClick={() => setShowSuspendedSales(true)}
+                  >
+                    <span className="flex items-center justify-center gap-2">
+                      Ver Ventas Suspendidas
+                      <Badge variant="secondary" className="bg-primary-foreground/20">
+                        {suspendedSales.length}
+                      </Badge>
+                    </span>
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1080,6 +1194,14 @@ export default function POSPage() {
         currentDiscountType={selectedItemForDiscount?.item.discountType || "FIXED"}
         currentDiscountValue={selectedItemForDiscount?.item.discountValue || 0}
         onApply={handleApplyItemDiscount}
+      />
+
+      <SuspendedSalesDialog
+        open={showSuspendedSales}
+        onClose={() => setShowSuspendedSales(false)}
+        suspendedSales={suspendedSales}
+        onResume={handleResumeSale}
+        onDelete={handleDeleteSuspendedSale}
       />
     </div>
   )
