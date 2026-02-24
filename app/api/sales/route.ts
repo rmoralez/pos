@@ -46,13 +46,57 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
     const limit = parseInt(searchParams.get("limit") || "50")
     const cashRegisterId = searchParams.get("cashRegisterId")
+    const search = searchParams.get("search")
+    const dateFrom = searchParams.get("dateFrom")
+    const dateTo = searchParams.get("dateTo")
+    const paymentMethod = searchParams.get("paymentMethod")
+    const status = searchParams.get("status")
+
+    // Build where clause with filters
+    const whereClause: any = {
+      tenantId: user.tenantId,
+      ...(user.locationId && { locationId: user.locationId }),
+      ...(cashRegisterId && { cashRegisterId }),
+    }
+
+    // Filter by sale number (search)
+    if (search) {
+      whereClause.saleNumber = {
+        contains: search,
+        mode: "insensitive",
+      }
+    }
+
+    // Filter by date range
+    if (dateFrom || dateTo) {
+      whereClause.createdAt = {}
+      if (dateFrom) {
+        whereClause.createdAt.gte = new Date(dateFrom)
+      }
+      if (dateTo) {
+        // Add 1 day and use lt to include the entire dateTo day
+        const dateToEnd = new Date(dateTo)
+        dateToEnd.setDate(dateToEnd.getDate() + 1)
+        whereClause.createdAt.lt = dateToEnd
+      }
+    }
+
+    // Filter by status
+    if (status) {
+      whereClause.status = status
+    }
+
+    // Filter by payment method (requires join)
+    if (paymentMethod) {
+      whereClause.payments = {
+        some: {
+          method: paymentMethod,
+        },
+      }
+    }
 
     const sales = await prisma.sale.findMany({
-      where: {
-        tenantId: user.tenantId,
-        ...(user.locationId && { locationId: user.locationId }),
-        ...(cashRegisterId && { cashRegisterId }),
-      },
+      where: whereClause,
       include: {
         items: {
           include: {
