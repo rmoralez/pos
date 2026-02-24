@@ -14,10 +14,24 @@ import { Label } from "@/components/ui/label"
 import { toast } from "@/hooks/use-toast"
 import { Plus, Trash2 } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 interface VariantAttribute {
   key: string
   value: string
+}
+
+interface ConfiguredAttribute {
+  id: string
+  name: string
+  displayName: string
+  sortOrder: number
 }
 
 interface VariantDialogProps {
@@ -39,17 +53,58 @@ export function VariantDialog({
 }: VariantDialogProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [attributes, setAttributes] = useState<VariantAttribute[]>([])
+  const [configuredAttributes, setConfiguredAttributes] = useState<ConfiguredAttribute[]>([])
+  const [parentProduct, setParentProduct] = useState<any>(null)
   const [formData, setFormData] = useState({
     sku: "",
     barcode: "",
     costPrice: "",
     salePrice: "",
+    marginPercent: "",
     weight: "",
     width: "",
     height: "",
     depth: "",
     isActive: true,
   })
+
+  // Fetch configured variant attributes
+  useEffect(() => {
+    const fetchConfiguredAttributes = async () => {
+      try {
+        const response = await fetch("/api/variant-attributes")
+        if (response.ok) {
+          const data = await response.json()
+          setConfiguredAttributes(data)
+        }
+      } catch (error) {
+        console.error("Failed to fetch configured attributes:", error)
+      }
+    }
+
+    if (open) {
+      fetchConfiguredAttributes()
+    }
+  }, [open])
+
+  // Fetch parent product data to preset values
+  useEffect(() => {
+    const fetchParentProduct = async () => {
+      try {
+        const response = await fetch(`/api/products/${productId}`)
+        if (response.ok) {
+          const data = await response.json()
+          setParentProduct(data)
+        }
+      } catch (error) {
+        console.error("Failed to fetch parent product:", error)
+      }
+    }
+
+    if (open && !variant) {
+      fetchParentProduct()
+    }
+  }, [open, variant, productId])
 
   // Reset form when dialog opens/closes or variant changes
   useEffect(() => {
@@ -67,11 +122,16 @@ export function VariantDialog({
           setAttributes([])
         }
 
+        const costPrice = variant.costPrice ? parseFloat(String(variant.costPrice)) : 0
+        const salePrice = variant.salePrice ? parseFloat(String(variant.salePrice)) : 0
+        const margin = costPrice > 0 ? ((salePrice - costPrice) / costPrice * 100) : 0
+
         setFormData({
           sku: variant.sku || "",
           barcode: variant.barcode || "",
           costPrice: variant.costPrice ? String(variant.costPrice) : "",
           salePrice: variant.salePrice ? String(variant.salePrice) : "",
+          marginPercent: margin > 0 ? margin.toFixed(2) : "",
           weight: variant.weight || "",
           width: variant.width || "",
           height: variant.height || "",
@@ -79,22 +139,43 @@ export function VariantDialog({
           isActive: variant.isActive !== false,
         })
       } else {
-        // Create mode: reset form
+        // Create mode: preset from parent product
         setAttributes([{ key: "", value: "" }])
-        setFormData({
-          sku: "",
-          barcode: "",
-          costPrice: "",
-          salePrice: "",
-          weight: "0",
-          width: "",
-          height: "",
-          depth: "",
-          isActive: true,
-        })
+
+        if (parentProduct) {
+          const costPrice = parentProduct.costPrice ? parseFloat(String(parentProduct.costPrice)) : 0
+          const salePrice = parentProduct.salePrice ? parseFloat(String(parentProduct.salePrice)) : 0
+          const margin = costPrice > 0 ? ((salePrice - costPrice) / costPrice * 100) : 0
+
+          setFormData({
+            sku: "",
+            barcode: "",
+            costPrice: parentProduct.costPrice ? String(parentProduct.costPrice) : "",
+            salePrice: parentProduct.salePrice ? String(parentProduct.salePrice) : "",
+            marginPercent: margin > 0 ? margin.toFixed(2) : "",
+            weight: "0",
+            width: "",
+            height: "",
+            depth: "",
+            isActive: true,
+          })
+        } else {
+          setFormData({
+            sku: "",
+            barcode: "",
+            costPrice: "",
+            salePrice: "",
+            marginPercent: "",
+            weight: "0",
+            width: "",
+            height: "",
+            depth: "",
+            isActive: true,
+          })
+        }
       }
     }
-  }, [open, variant])
+  }, [open, variant, parentProduct])
 
   const handleAddAttribute = () => {
     setAttributes([...attributes, { key: "", value: "" }])
@@ -112,6 +193,69 @@ export function VariantDialog({
     const updated = [...attributes]
     updated[index][field] = value
     setAttributes(updated)
+  }
+
+  // Price calculation helpers (similar to product-form)
+  const handleCostPriceChange = (value: string) => {
+    setFormData({ ...formData, costPrice: value })
+    if (value && formData.marginPercent) {
+      const cost = parseFloat(value)
+      const margin = parseFloat(formData.marginPercent)
+      if (!isNaN(cost) && !isNaN(margin) && cost > 0) {
+        const salePrice = cost * (1 + margin / 100)
+        setFormData({
+          ...formData,
+          costPrice: value,
+          salePrice: salePrice.toFixed(2),
+        })
+      }
+    }
+  }
+
+  const handleSalePriceChange = (value: string) => {
+    setFormData({ ...formData, salePrice: value })
+    if (value && formData.costPrice) {
+      const cost = parseFloat(formData.costPrice)
+      const sale = parseFloat(value)
+      if (!isNaN(cost) && !isNaN(sale) && cost > 0) {
+        const margin = ((sale - cost) / cost) * 100
+        setFormData({
+          ...formData,
+          salePrice: value,
+          marginPercent: margin.toFixed(2),
+        })
+      }
+    }
+  }
+
+  const handleMarginChange = (value: string) => {
+    setFormData({ ...formData, marginPercent: value })
+    if (value && formData.costPrice) {
+      const cost = parseFloat(formData.costPrice)
+      const margin = parseFloat(value)
+      if (!isNaN(cost) && !isNaN(margin) && cost > 0) {
+        const salePrice = cost * (1 + margin / 100)
+        setFormData({
+          ...formData,
+          marginPercent: value,
+          salePrice: salePrice.toFixed(2),
+        })
+      }
+    }
+  }
+
+  const applyMarginPreset = (margin: number) => {
+    if (formData.costPrice) {
+      const cost = parseFloat(formData.costPrice)
+      if (!isNaN(cost) && cost > 0) {
+        const salePrice = cost * (1 + margin / 100)
+        setFormData({
+          ...formData,
+          marginPercent: margin.toFixed(2),
+          salePrice: salePrice.toFixed(2),
+        })
+      }
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -249,22 +393,44 @@ export function VariantDialog({
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Define los atributos que diferencian esta variante (ej: Talle, Color, Material)
+              {configuredAttributes.length > 0
+                ? "Define los atributos que diferencian esta variante"
+                : "No hay atributos configurados. Configura atributos de variantes en Configuración > Atributos Variantes para usar selectores predefinidos."
+              }
             </p>
 
             {attributes.map((attr, index) => (
               <div key={index} className="flex gap-2">
+                {configuredAttributes.length > 0 ? (
+                  <Select
+                    value={attr.key}
+                    onValueChange={(value) => handleAttributeChange(index, "key", value)}
+                    disabled={isLoading}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Seleccionar atributo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {configuredAttributes.map((confAttr) => (
+                        <SelectItem key={confAttr.id} value={confAttr.name}>
+                          {confAttr.displayName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    placeholder="Atributo (ej: color, talle)"
+                    value={attr.key}
+                    onChange={(e) =>
+                      handleAttributeChange(index, "key", e.target.value)
+                    }
+                    disabled={isLoading}
+                    className="flex-1"
+                  />
+                )}
                 <Input
-                  placeholder="Atributo (ej: Talle)"
-                  value={attr.key}
-                  onChange={(e) =>
-                    handleAttributeChange(index, "key", e.target.value)
-                  }
-                  disabled={isLoading}
-                  className="flex-1"
-                />
-                <Input
-                  placeholder="Valor (ej: L)"
+                  placeholder="Valor (ej: Rojo, L, 500g)"
                   value={attr.value}
                   onChange={(e) =>
                     handleAttributeChange(index, "value", e.target.value)
@@ -322,36 +488,95 @@ export function VariantDialog({
           </div>
 
           {/* Prices */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="costPrice">Precio de costo *</Label>
-              <Input
-                id="costPrice"
-                type="number"
-                step="0.01"
-                value={formData.costPrice}
-                onChange={(e) =>
-                  setFormData({ ...formData, costPrice: e.target.value })
-                }
-                disabled={isLoading}
-                placeholder="0.00"
-                required
-              />
+          <div className="space-y-3">
+            <Label className="text-base">Precios</Label>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="costPrice">Precio de costo *</Label>
+                <Input
+                  id="costPrice"
+                  type="number"
+                  step="0.01"
+                  value={formData.costPrice}
+                  onChange={(e) => handleCostPriceChange(e.target.value)}
+                  disabled={isLoading}
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="salePrice">Precio de venta *</Label>
+                <Input
+                  id="salePrice"
+                  type="number"
+                  step="0.01"
+                  value={formData.salePrice}
+                  onChange={(e) => handleSalePriceChange(e.target.value)}
+                  disabled={isLoading}
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="marginPercent">Margen %</Label>
+                <Input
+                  id="marginPercent"
+                  type="number"
+                  step="0.01"
+                  value={formData.marginPercent}
+                  onChange={(e) => handleMarginChange(e.target.value)}
+                  disabled={isLoading}
+                  placeholder="0.00"
+                  className={
+                    formData.marginPercent && parseFloat(formData.marginPercent) > 0
+                      ? "border-green-500 text-green-700"
+                      : ""
+                  }
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="salePrice">Precio de venta *</Label>
-              <Input
-                id="salePrice"
-                type="number"
-                step="0.01"
-                value={formData.salePrice}
-                onChange={(e) =>
-                  setFormData({ ...formData, salePrice: e.target.value })
-                }
-                disabled={isLoading}
-                placeholder="0.00"
-                required
-              />
+            {/* Quick margin presets */}
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => applyMarginPreset(5)}
+                disabled={isLoading || !formData.costPrice}
+                className="text-xs"
+              >
+                +5%
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => applyMarginPreset(10)}
+                disabled={isLoading || !formData.costPrice}
+                className="text-xs"
+              >
+                +10%
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => applyMarginPreset(50)}
+                disabled={isLoading || !formData.costPrice}
+                className="text-xs"
+              >
+                +50%
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => applyMarginPreset(100)}
+                disabled={isLoading || !formData.costPrice}
+                className="text-xs"
+              >
+                +100%
+              </Button>
             </div>
           </div>
 

@@ -52,6 +52,7 @@ model Tenant {
   suspendedQuotes          SuspendedQuote[]
   suspendedSales           SuspendedSale[]
   users                    User[]
+  variantAttributes        VariantAttribute[]
 
   @@index([cuit])
   @@index([isActive])
@@ -811,6 +812,22 @@ model ProductVariant {
   @@index([sku])
   @@index([tenantId])
   @@index([tiendanubeId])
+}
+
+model VariantAttribute {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  displayName String
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([isActive])
 }
 
 model PurchaseOrder {

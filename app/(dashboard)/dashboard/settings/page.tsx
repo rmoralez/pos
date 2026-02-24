@@ -46,6 +46,7 @@ import {
   CreditCard,
   Folder,
   DollarSign,
+  Tag,
 } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
 import { format } from "date-fns"
@@ -53,6 +54,7 @@ import { es } from "date-fns/locale"
 import { MovementTypesTab } from "@/components/settings/movement-types-tab"
 import { PaymentMethodAccountsTab } from "@/components/settings/payment-method-accounts-tab"
 import { DenominationsTab } from "@/components/settings/denominations-tab"
+import { VariantAttributesTab } from "@/components/settings/variant-attributes-tab"
 import { CategoryTree, type Category } from "@/components/categories/category-tree"
 import { CategoryDialog } from "@/components/categories/category-dialog"
 
@@ -597,6 +599,10 @@ export default function SettingsPage() {
             <Folder className="mr-2 h-4 w-4" />
             Categorías
           </TabsTrigger>
+          <TabsTrigger value="variant-attributes">
+            <Tag className="mr-2 h-4 w-4" />
+            Atributos Variantes
+          </TabsTrigger>
           <TabsTrigger value="denominations">
             <DollarSign className="mr-2 h-4 w-4" />
             Denominaciones
@@ -940,6 +946,11 @@ export default function SettingsPage() {
               />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Variant Attributes Tab */}
+        <TabsContent value="variant-attributes" className="space-y-4">
+          <VariantAttributesTab />
         </TabsContent>
 
         {/* Denominations Tab */}
