@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/session"
 import { prisma } from "@/lib/db"
-import { getAfipCredentials, type AfipConfig } from "@/lib/afip"
+import { getAfipCredentials, getMasterAfipConfig } from "@/lib/afip"
 
 /**
  * POST /api/afip/auth
- * Get authentication token from AFIP WSAA
+ * Test AFIP WSAA authentication using master credentials (delegated model)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -18,9 +18,6 @@ export async function POST(request: NextRequest) {
       where: { id: user.tenantId },
       select: {
         cuit: true,
-        afipMode: true,
-        afipCert: true,
-        afipKey: true,
         afipPuntoVenta: true,
       },
     })
@@ -29,17 +26,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 })
     }
 
-    // Validate configuration
-    if (!tenant.afipCert || !tenant.afipKey) {
-      return NextResponse.json(
-        {
-          error:
-            "Configuración AFIP incompleta. Debes cargar el certificado y la clave privada.",
-        },
-        { status: 400 }
-      )
-    }
-
+    // Validate tenant configuration
     if (!tenant.afipPuntoVenta) {
       return NextResponse.json(
         { error: "Punto de venta no configurado" },
@@ -47,31 +34,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const config: AfipConfig = {
-      mode: (tenant.afipMode as "homologacion" | "produccion") || "homologacion",
-      cuit: tenant.cuit,
-      cert: tenant.afipCert,
-      key: tenant.afipKey,
-      puntoVenta: tenant.afipPuntoVenta,
+    // Get master configuration
+    let masterConfig
+    try {
+      masterConfig = getMasterAfipConfig()
+    } catch (error: any) {
+      return NextResponse.json(
+        {
+          error:
+            "Configuración maestra AFIP no encontrada. El proveedor debe configurar las variables de entorno AFIP_PROVIDER_CUIT, AFIP_MASTER_CERT y AFIP_MASTER_KEY.",
+        },
+        { status: 500 }
+      )
     }
 
-    // Get credentials from AFIP
-    const credentials = await getAfipCredentials(config)
-
-    // Save credentials to database
-    await prisma.tenant.update({
-      where: { id: user.tenantId },
-      data: {
-        afipToken: credentials.token,
-        afipSign: credentials.sign,
-        afipTokenExpiresAt: credentials.expiresAt,
-      },
-    })
+    // Get credentials from AFIP using master certificate
+    const credentials = await getAfipCredentials(masterConfig)
 
     return NextResponse.json({
       success: true,
       expiresAt: credentials.expiresAt,
-      message: "Token AFIP obtenido correctamente",
+      message: "Autenticación AFIP exitosa con certificado maestro",
     })
   } catch (error: any) {
     console.error("POST /api/afip/auth error:", error)

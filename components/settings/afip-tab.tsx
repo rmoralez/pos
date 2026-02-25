@@ -16,11 +16,9 @@ import { toast } from "@/hooks/use-toast"
 import {
   CheckCircle2,
   XCircle,
-  RefreshCw,
-  Upload,
-  FileText,
   AlertCircle,
   Shield,
+  Building2,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -30,17 +28,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Textarea } from "@/components/ui/textarea"
 
 interface AfipConfig {
   cuit: string
-  afipMode: string
   afipPuntoVenta: number
   afipDefaultInvoiceType: string
   afipEnabled: boolean
-  afipTokenExpiresAt: string | null
-  hasCredentials: boolean
-  hasValidToken: boolean
+  hasMasterCredentials: boolean
+  masterMode: string
+  providerCuit: string
 }
 
 export function AfipTab() {
@@ -48,12 +44,8 @@ export function AfipTab() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
-  const [gettingToken, setGettingToken] = useState(false)
 
   const [formData, setFormData] = useState({
-    afipMode: "homologacion" as "homologacion" | "produccion",
-    afipCert: "",
-    afipKey: "",
     afipPuntoVenta: 1,
     afipDefaultInvoiceType: "B" as "A" | "B" | "C",
     afipEnabled: false,
@@ -70,9 +62,6 @@ export function AfipTab() {
         const data = await response.json()
         setConfig(data)
         setFormData({
-          afipMode: data.afipMode || "homologacion",
-          afipCert: "",
-          afipKey: "",
           afipPuntoVenta: data.afipPuntoVenta || 1,
           afipDefaultInvoiceType: data.afipDefaultInvoiceType || "B",
           afipEnabled: data.afipEnabled || false,
@@ -101,51 +90,17 @@ export function AfipTab() {
 
       toast({
         title: "Configuración guardada",
-        description: "La configuración de AFIP se guardó correctamente",
+        description: "La configuración AFIP se guardó correctamente",
       })
-
       fetchConfig()
     } catch (error: any) {
       toast({
+        variant: "destructive",
         title: "Error",
         description: error.message,
-        variant: "destructive",
       })
     } finally {
       setSaving(false)
-    }
-  }
-
-  const handleGetToken = async () => {
-    setGettingToken(true)
-    try {
-      const response = await fetch("/api/afip/auth", {
-        method: "POST",
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Error al obtener token")
-      }
-
-      const data = await response.json()
-
-      toast({
-        title: "Token obtenido",
-        description: `Token válido hasta: ${new Date(
-          data.expiresAt
-        ).toLocaleString("es-AR")}`,
-      })
-
-      fetchConfig()
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      })
-    } finally {
-      setGettingToken(false)
     }
   }
 
@@ -153,61 +108,31 @@ export function AfipTab() {
     setTesting(true)
     try {
       const response = await fetch("/api/afip/test")
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Error al probar conexión")
-      }
-
       const data = await response.json()
 
       if (data.success) {
         toast({
           title: "Conexión exitosa",
-          description: `Conectado a AFIP en modo ${data.mode}`,
+          description: data.message,
         })
       } else {
-        throw new Error(data.error || "Error de conexión")
+        throw new Error(data.error || "Error al probar conexión")
       }
     } catch (error: any) {
       toast({
+        variant: "destructive",
         title: "Error de conexión",
         description: error.message,
-        variant: "destructive",
       })
     } finally {
       setTesting(false)
     }
   }
 
-  const handleCertFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const content = event.target?.result as string
-        setFormData({ ...formData, afipCert: content })
-      }
-      reader.readAsText(file)
-    }
-  }
-
-  const handleKeyFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const content = event.target?.result as string
-        setFormData({ ...formData, afipKey: content })
-      }
-      reader.readAsText(file)
-    }
-  }
-
   if (loading) {
     return (
-      <div className="flex justify-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="flex items-center justify-center h-48">
+        <div className="text-muted-foreground">Cargando configuración...</div>
       </div>
     )
   }
@@ -215,72 +140,69 @@ export function AfipTab() {
   return (
     <div className="space-y-6">
       {/* Status Card */}
-      <Card>
+      <Card className="border-blue-200 bg-blue-50/50">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Estado de AFIP</CardTitle>
-              <CardDescription>
-                Facturación electrónica con AFIP
-              </CardDescription>
-            </div>
-            <Badge
-              variant={config?.afipEnabled ? "default" : "secondary"}
-              className="text-sm"
-            >
-              {config?.afipEnabled ? "Activado" : "Desactivado"}
-            </Badge>
+            <CardTitle className="text-lg">Estado del Servicio</CardTitle>
+            <Shield className="h-5 w-5 text-blue-600" />
           </div>
+          <CardDescription>
+            Sistema de facturación electrónica AFIP (Modelo Delegado)
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex items-center gap-2">
-              {config?.hasCredentials ? (
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
-              ) : (
-                <XCircle className="h-5 w-5 text-red-600" />
-              )}
-              <div>
-                <p className="text-sm font-medium">Certificado</p>
-                <p className="text-xs text-muted-foreground">
-                  {config?.hasCredentials ? "Configurado" : "No configurado"}
-                </p>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">
+                Certificado Maestro (Proveedor)
               </div>
+              <div className="flex items-center gap-2">
+                {config?.hasMasterCredentials ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <span className="text-sm font-medium text-green-700">
+                      Configurado
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="h-4 w-4 text-red-600" />
+                    <span className="text-sm font-medium text-red-700">
+                      No configurado
+                    </span>
+                  </>
+                )}
+              </div>
+              {config?.hasMasterCredentials && (
+                <div className="text-xs text-muted-foreground">
+                  Modo: {config.masterMode === "homologacion" ? "Homologación (test)" : "Producción"}
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-2">
-              {config?.hasValidToken ? (
-                <CheckCircle2 className="h-5 w-5 text-green-600" />
-              ) : (
-                <XCircle className="h-5 w-5 text-red-600" />
-              )}
-              <div>
-                <p className="text-sm font-medium">Token AFIP</p>
-                <p className="text-xs text-muted-foreground">
-                  {config?.hasValidToken ? "Válido" : "No disponible"}
-                </p>
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">
+                CUIT del Proveedor
               </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Shield className="h-5 w-5 text-blue-600" />
-              <div>
-                <p className="text-sm font-medium">Modo</p>
-                <p className="text-xs text-muted-foreground">
-                  {config?.afipMode === "produccion"
-                    ? "Producción"
-                    : "Homologación"}
-                </p>
+              <div className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-medium">
+                  {config?.providerCuit || "No disponible"}
+                </span>
               </div>
             </div>
           </div>
 
-          {config?.afipTokenExpiresAt && (
-            <div className="bg-muted p-3 rounded-lg">
-              <p className="text-sm">
-                <strong>Token expira:</strong>{" "}
-                {new Date(config.afipTokenExpiresAt).toLocaleString("es-AR")}
-              </p>
+          {!config?.hasMasterCredentials && (
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <div className="flex gap-2">
+                <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0" />
+                <div className="text-sm text-yellow-800">
+                  <strong>Atención:</strong> El proveedor del sistema debe configurar
+                  los certificados maestros AFIP en las variables de entorno antes de
+                  que puedas usar facturación electrónica.
+                </div>
+              </div>
             </div>
           )}
         </CardContent>
@@ -289,42 +211,17 @@ export function AfipTab() {
       {/* Configuration Form */}
       <Card>
         <CardHeader>
-          <CardTitle>Configuración General</CardTitle>
+          <CardTitle>Configuración de tu Comercio</CardTitle>
           <CardDescription>
-            Configurá los parámetros básicos de AFIP
+            Configurá el punto de venta y el tipo de factura que usarás
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="afipMode">Modo de Operación</Label>
-              <Select
-                value={formData.afipMode}
-                onValueChange={(value: "homologacion" | "produccion") =>
-                  setFormData({ ...formData, afipMode: value })
-                }
-              >
-                <SelectTrigger id="afipMode">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="homologacion">
-                    Homologación (Pruebas)
-                  </SelectItem>
-                  <SelectItem value="produccion">
-                    Producción (Real)
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Usá Homologación para pruebas
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="afipPuntoVenta">Punto de Venta</Label>
+              <Label htmlFor="punto-venta">Punto de Venta</Label>
               <Input
-                id="afipPuntoVenta"
+                id="punto-venta"
                 type="number"
                 min="1"
                 value={formData.afipPuntoVenta}
@@ -336,108 +233,91 @@ export function AfipTab() {
                 }
               />
               <p className="text-xs text-muted-foreground">
-                Número de punto de venta en AFIP
+                Número asignado por AFIP para tu punto de venta
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="afipDefaultInvoiceType">
-                Tipo de Factura por Defecto
-              </Label>
+              <Label htmlFor="invoice-type">Tipo de Factura por Defecto</Label>
               <Select
                 value={formData.afipDefaultInvoiceType}
                 onValueChange={(value: "A" | "B" | "C") =>
                   setFormData({ ...formData, afipDefaultInvoiceType: value })
                 }
               >
-                <SelectTrigger id="afipDefaultInvoiceType">
+                <SelectTrigger id="invoice-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="A">Factura A</SelectItem>
-                  <SelectItem value="B">Factura B</SelectItem>
-                  <SelectItem value="C">Factura C</SelectItem>
+                  <SelectItem value="A">
+                    Factura A - Responsables Inscriptos
+                  </SelectItem>
+                  <SelectItem value="B">
+                    Factura B - Consumidor Final
+                  </SelectItem>
+                  <SelectItem value="C">Factura C - Operaciones Exentas</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                A: Responsable Inscripto, B: Consumidor Final, C: Exento
-              </p>
-            </div>
-
-            <div className="space-y-2 flex flex-col justify-center">
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="afipEnabled"
-                  checked={formData.afipEnabled}
-                  onCheckedChange={(checked) =>
-                    setFormData({ ...formData, afipEnabled: checked })
-                  }
-                />
-                <Label htmlFor="afipEnabled">Activar Facturación AFIP</Label>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Activá para generar facturas electrónicas
-              </p>
             </div>
           </div>
 
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex gap-2">
-              <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm text-yellow-800">
-                <strong>CUIT configurado:</strong> {config?.cuit}
-                <br />
-                Este CUIT se usa para todas las operaciones con AFIP
-              </div>
+          <div className="flex items-center justify-between p-4 border rounded-lg">
+            <div className="space-y-0.5">
+              <Label htmlFor="afip-enabled" className="text-base">
+                Activar Facturación AFIP
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Habilitar emisión de facturas electrónicas
+              </p>
             </div>
+            <Switch
+              id="afip-enabled"
+              checked={formData.afipEnabled}
+              onCheckedChange={(checked) =>
+                setFormData({ ...formData, afipEnabled: checked })
+              }
+              disabled={!config?.hasMasterCredentials}
+            />
           </div>
+
+          {formData.afipEnabled && !config?.hasMasterCredentials && (
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
+              No se puede activar: el proveedor no ha configurado los certificados maestros.
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Certificates */}
+      {/* Instructions */}
       <Card>
         <CardHeader>
-          <CardTitle>Certificados y Claves</CardTitle>
+          <CardTitle>¿Cómo configurar la facturación electrónica?</CardTitle>
           <CardDescription>
-            Cargá el certificado X.509 y la clave privada de AFIP
+            Seguí estos pasos para autorizar a tu proveedor a facturar en tu nombre
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="certFile">Certificado (archivo .crt o .pem)</Label>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex gap-2">
-              <Input
-                id="certFile"
-                type="file"
-                accept=".crt,.pem,.cer"
-                onChange={handleCertFileUpload}
-                className="flex-1"
-              />
-              {config?.hasCredentials && (
-                <Badge variant="secondary" className="self-center">
-                  <FileText className="h-3 w-3 mr-1" />
-                  Cargado
-                </Badge>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="keyFile">Clave Privada (archivo .key)</Label>
-            <div className="flex gap-2">
-              <Input
-                id="keyFile"
-                type="file"
-                accept=".key,.pem"
-                onChange={handleKeyFileUpload}
-                className="flex-1"
-              />
-              {config?.hasCredentials && (
-                <Badge variant="secondary" className="self-center">
-                  <FileText className="h-3 w-3 mr-1" />
-                  Cargado
-                </Badge>
-              )}
+              <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-blue-800 w-full">
+                <strong className="block mb-2">
+                  Paso 1: Dar de alta tu Punto de Venta en AFIP
+                </strong>
+                <ol className="list-decimal list-inside space-y-1.5 ml-2">
+                  <li>Ingresá a AFIP con tu Clave Fiscal</li>
+                  <li>Andá a &quot;Administración de puntos de venta y domicilios&quot;</li>
+                  <li>Seleccioná tu empresa</li>
+                  <li>Hacé clic en &quot;A/B/M de Puntos de venta&quot;</li>
+                  <li>Agregá un nuevo punto de venta:</li>
+                  <ul className="list-disc list-inside ml-4 mt-1 space-y-1">
+                    <li>Elegí un número (ejemplo: 1, 2, 3...)</li>
+                    <li>Sistema: &quot;RECE para aplicativo y web services&quot;</li>
+                    <li>Domicilio fiscal de tu comercio</li>
+                  </ul>
+                  <li>Guardá el número de punto de venta</li>
+                </ol>
+              </div>
             </div>
           </div>
 
@@ -445,47 +325,51 @@ export function AfipTab() {
             <div className="flex gap-2">
               <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-blue-800 w-full">
-                <strong>¿Cómo obtener los certificados?</strong>
-
-                <div className="mt-3 mb-3 bg-white p-3 rounded border border-blue-300">
-                  <strong>Paso 1: Generar CSR y Clave Privada (en tu computadora)</strong>
-                  <div className="bg-gray-900 text-gray-100 p-3 rounded mt-2 font-mono text-xs overflow-x-auto">
-                    openssl req -new -newkey rsa:2048 -nodes \<br/>
-                    &nbsp;&nbsp;-keyout afip.key -out afip.csr \<br/>
-                    &nbsp;&nbsp;-subj &quot;/C=AR/O=TU_EMPRESA/CN=TU_EMPRESA/serialNumber=CUIT TU_CUIT&quot;
-                  </div>
-                  <p className="text-xs mt-2">
-                    Esto genera: <code className="bg-gray-100 px-1 py-0.5 rounded">afip.key</code> (clave privada) y <code className="bg-gray-100 px-1 py-0.5 rounded">afip.csr</code> (solicitud)
-                  </p>
-                </div>
-
-                <div className="bg-white p-3 rounded border border-blue-300">
-                  <strong>Paso 2: Subir CSR a AFIP</strong>
-                  <ol className="list-decimal list-inside mt-2 space-y-1.5 ml-2">
-                    <li>Ingresá a AFIP con Clave Fiscal</li>
-                    <li>Andá a &quot;Administrador de Relaciones de Clave Fiscal&quot;</li>
-                    <li>Seleccioná &quot;Nueva Relación&quot;</li>
-                    <li>Buscá el servicio &quot;wsfe&quot; (Facturación Electrónica)</li>
-                    <li>Seleccioná &quot;Generar nueva solicitud&quot;</li>
-                    <li className="space-y-1">
-                      <span>Copiá el contenido de <code className="bg-gray-100 px-1 py-0.5 rounded">afip.csr</code> y pegalo en AFIP:</span>
-                      <div className="bg-gray-900 text-gray-100 p-2 rounded font-mono text-xs">
-                        cat afip.csr
-                      </div>
-                    </li>
-                    <li>AFIP te devuelve el certificado firmado → copialo y guardalo como <code className="bg-gray-100 px-1 py-0.5 rounded">afip.crt</code></li>
-                  </ol>
-                </div>
-
-                <div className="mt-3 p-3 bg-yellow-50 border border-yellow-300 rounded">
-                  <strong className="text-yellow-900">⚠️ Importante:</strong>
-                  <ul className="list-disc list-inside text-xs mt-1.5 space-y-1">
-                    <li>Guardá <code className="bg-gray-100 px-1 py-0.5 rounded">afip.key</code> en lugar seguro (NUNCA lo compartas)</li>
-                    <li>Necesitás ambos archivos para subir acá: <code className="bg-gray-100 px-1 py-0.5 rounded">afip.crt</code> y <code className="bg-gray-100 px-1 py-0.5 rounded">afip.key</code></li>
-                  </ul>
-                </div>
+                <strong className="block mb-2">
+                  Paso 2: Autorizar al Proveedor en AFIP
+                </strong>
+                <ol className="list-decimal list-inside space-y-1.5 ml-2">
+                  <li>En AFIP, andá a &quot;Administrador de Relaciones de Clave Fiscal&quot;</li>
+                  <li>Hacé clic en &quot;Nueva Relación&quot;</li>
+                  <li>Buscá el servicio &quot;Factura Electrónica&quot; o &quot;wsfe&quot;</li>
+                  <li>En el campo &quot;Representante&quot;, ingresá el CUIT del proveedor:</li>
+                  {config?.providerCuit && (
+                    <div className="bg-white p-3 rounded border border-blue-300 font-mono text-base font-bold my-2">
+                      {config.providerCuit}
+                    </div>
+                  )}
+                  <li>Confirmá la relación</li>
+                </ol>
               </div>
             </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex gap-2">
+              <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-blue-800 w-full">
+                <strong className="block mb-2">Paso 3: Configurar en este Sistema</strong>
+                <ol className="list-decimal list-inside space-y-1.5 ml-2">
+                  <li>Ingresá el número de punto de venta que creaste en el paso 1</li>
+                  <li>Seleccioná tu tipo de factura por defecto</li>
+                  <li>Guardá la configuración</li>
+                  <li>Probá la conexión con el botón &quot;Probar Conexión&quot;</li>
+                  <li>Si todo funciona, activá la facturación con el switch</li>
+                </ol>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 p-3 bg-yellow-50 border border-yellow-300 rounded">
+            <strong className="text-yellow-900">⚠️ Importante:</strong>
+            <ul className="list-disc list-inside text-xs mt-1.5 space-y-1 text-yellow-800">
+              <li>Estos pasos deben realizarse desde tu cuenta de AFIP (con tu CUIT)</li>
+              <li>La relación con el proveedor te permite a vos emitir facturas usando tu CUIT</li>
+              <li>
+                El proveedor NO tiene acceso a tu Clave Fiscal ni a ningún dato sensible de
+                tu empresa
+              </li>
+            </ul>
           </div>
         </CardContent>
       </Card>
@@ -497,18 +381,9 @@ export function AfipTab() {
         </Button>
 
         <Button
-          onClick={handleGetToken}
-          disabled={gettingToken || !config?.hasCredentials}
           variant="outline"
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${gettingToken ? "animate-spin" : ""}`} />
-          Obtener Token AFIP
-        </Button>
-
-        <Button
           onClick={handleTestConnection}
-          disabled={testing || !config?.hasValidToken}
-          variant="outline"
+          disabled={testing || !config?.hasMasterCredentials || !formData.afipPuntoVenta}
         >
           {testing ? "Probando..." : "Probar Conexión"}
         </Button>

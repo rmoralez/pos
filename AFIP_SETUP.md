@@ -1,264 +1,195 @@
-# Configuración de AFIP - Facturación Electrónica
+# Configuración de AFIP - Facturación Electrónica (Modelo Delegado/SaaS)
 
-Esta guía te ayudará a configurar la integración con AFIP para generar facturas electrónicas.
+Esta guía te ayudará a configurar la integración con AFIP para generar facturas electrónicas usando el **modelo delegado** (también conocido como modelo SaaS o de representación).
+
+## ¿Qué es el Modelo Delegado?
+
+En este modelo:
+- ✅ **El proveedor del sistema** (vos) configurás **UN** certificado maestro
+- ✅ **Tus clientes** simplemente se "relacionan" con tu CUIT desde su AFIP
+- ✅ **El sistema** factura en nombre de cada cliente usando tu certificado + su CUIT
+- ✅ **Mucho más simple** para tus clientes: no necesitan generar certificados
+
+---
 
 ## Índice
 
-1. [Requisitos Previos](#requisitos-previos)
-2. [Obtener Certificados de AFIP](#obtener-certificados-de-afip)
-3. [Configuración en el Sistema](#configuración-en-el-sistema)
-4. [Pruebas en Homologación](#pruebas-en-homologación)
-5. [Paso a Producción](#paso-a-producción)
-6. [Solución de Problemas](#solución-de-problemas)
+1. [Configuración del Proveedor (Una Sola Vez)](#configuración-del-proveedor-una-sola-vez)
+2. [Configuración del Cliente](#configuración-del-cliente)
+3. [Solución de Problemas](#solución-de-problemas)
 
 ---
 
-## Requisitos Previos
+## Configuración del Proveedor (Una Sola Vez)
 
-Antes de comenzar, asegurate de tener:
+Esta configuración la hacés vos, como proveedor del sistema, **UNA SOLA VEZ**.
 
-- ✅ **Clave Fiscal nivel 3** (AFIP)
-- ✅ **CUIT** del comercio
-- ✅ **Punto de venta** asignado por AFIP
-- ✅ Acceso al sistema como **ADMIN**
+### Paso 1: Generar Certificado Maestro
 
----
-
-## Obtener Certificados de AFIP
-
-### Paso 1: Generar Certificado y Clave Privada
-
-Podés generar el certificado de dos formas:
-
-#### Opción A: Usando OpenSSL (Recomendado)
+Usá OpenSSL para generar tu certificado maestro:
 
 ```bash
 # 1. Generar clave privada
-openssl genrsa -out afip.key 2048
+openssl genrsa -out afip-master.key 2048
 
 # 2. Generar Certificate Signing Request (CSR)
-openssl req -new -key afip.key -out afip.csr \
+openssl req -new -key afip-master.key -out afip-master.csr \
   -subj "/C=AR/O=TU_EMPRESA/CN=TU_EMPRESA/serialNumber=CUIT TU_CUIT"
 
 # 3. Autofirmar el certificado (válido por 2 años)
-openssl x509 -req -days 730 -in afip.csr \
-  -signkey afip.key -out afip.crt
+openssl x509 -req -days 730 -in afip-master.csr \
+  -signkey afip-master.key -out afip-master.crt
 ```
 
-#### Opción B: Solicitar a AFIP
+⚠️ **Importante**: Reemplazá `TU_EMPRESA` y `TU_CUIT` con tus datos reales.
 
-Podés solicitar que AFIP genere el certificado por vos (más simple pero menos control).
+### Paso 2: Registrar el Certificado en AFIP
 
-### Paso 2: Cargar Certificado en AFIP
+#### Para Homologación (Pruebas):
 
 1. Ingresá a **AFIP** con tu **Clave Fiscal**
-2. Andá a **Administrador de Relaciones de Clave Fiscal**
-3. Seleccioná **Nueva Relación**
-4. En el buscador, escribí: **wsfe** (Facturación Electrónica)
-5. Seleccioná el servicio **wsfe**
-6. Elegí:
-   - **Certificado**: Subí el archivo `afip.crt` que generaste
-   - **Seleccioná relación**: Adherir servicio
-7. Guardá la relación
+2. Buscá **"Administrador de Certificados Digitales"**
+3. Hacé clic en **"Solicitudes"** o **"Generar Nuevo Certificado"**
+4. Seleccioná **"Solicitud de Certificado con CSR"**
+5. Copiá el contenido del archivo `afip-master.csr`:
+   ```bash
+   cat afip-master.csr
+   ```
+6. Pegá el contenido completo (incluyendo BEGIN/END)
+7. Asociá el certificado al servicio **"wsfe"** (Web Service Factura Electrónica)
+8. AFIP genera el certificado → descargalo o copiá el contenido
 
-### Paso 3: Descargar Archivos
+#### Para Producción:
 
-Vas a necesitar dos archivos:
+Mismo proceso, pero en el ambiente de **producción** de AFIP.
 
-1. **Certificado X.509** (`.crt` o `.pem`)
-   - Es el archivo que subiste o que AFIP generó
+### Paso 3: Configurar Variables de Entorno
 
-2. **Clave Privada** (`.key`)
-   - Es el archivo `afip.key` que generaste
-   - ⚠️ **MUY IMPORTANTE**: No compartas este archivo con nadie
+Agregá estas variables a tu archivo `.env` o a tu sistema de deployment:
 
----
+```bash
+# CUIT del proveedor (tu CUIT)
+AFIP_PROVIDER_CUIT="20314939493"
 
-## Configuración en el Sistema
+# Certificado maestro (formato PEM con \n)
+AFIP_MASTER_CERT="-----BEGIN CERTIFICATE-----\nMIID...\n-----END CERTIFICATE-----"
 
-### 1. Acceder a Configuración
+# Clave privada maestra (formato PEM con \n)
+AFIP_MASTER_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----"
 
-1. Iniciá sesión como **ADMIN**
-2. Andá a **Configuración** (menú lateral)
-3. Seleccioná la pestaña **AFIP**
+# Modo: "homologacion" o "produccion"
+AFIP_MODE="homologacion"
+```
 
-### 2. Configuración General
+**Consejos**:
+- Para certificados multi-línea, reemplazá saltos de línea con `\n`
+- En producción, usá variables de entorno seguras (no archivos .env)
+- Nunca commitees estos valores en Git
 
-Completá los siguientes campos:
+### Paso 4: Verificar Configuración
 
-| Campo | Descripción | Valor Inicial |
-|-------|-------------|---------------|
-| **Modo de Operación** | Ambiente de trabajo | `Homologación` (para pruebas) |
-| **Punto de Venta** | Número asignado por AFIP | `1` (o el que te asignaron) |
-| **Tipo de Factura por Defecto** | A, B o C | `B` (Consumidor Final) |
-| **Activar Facturación AFIP** | Habilitar sistema | ❌ Off (hasta terminar config) |
-
-#### Tipos de Factura
-
-- **Factura A**: Para Responsables Inscriptos (discrimina IVA)
-- **Factura B**: Para Consumidor Final o Monotributistas (incluye IVA)
-- **Factura C**: Para operaciones exentas
-
-### 3. Cargar Certificados
-
-1. **Certificado (archivo .crt o .pem)**
-   - Hacé clic en "Seleccionar archivo"
-   - Seleccioná tu archivo `afip.crt`
-
-2. **Clave Privada (archivo .key)**
-   - Hacé clic en "Seleccionar archivo"
-   - Seleccioná tu archivo `afip.key`
-
-3. Hacé clic en **"Guardar Configuración"**
-
-### 4. Obtener Token de AFIP
-
-Una vez guardada la configuración:
-
-1. Hacé clic en **"Obtener Token AFIP"**
-2. El sistema se conectará con AFIP (WSAA)
-3. Si todo está bien, verás el mensaje: **"Token obtenido"**
-4. El token es válido por **12 horas**
-
-💡 **Tip**: El sistema te mostrará cuándo expira el token. Deberás renovarlo periódicamente.
-
-### 5. Probar Conexión
-
-Antes de activar:
-
-1. Hacé clic en **"Probar Conexión"**
-2. Deberías ver: **"Conexión exitosa con AFIP"**
-3. Si hay error, revisá la [sección de problemas](#solución-de-problemas)
-
-### 6. Activar Facturación
-
-Si la prueba fue exitosa:
-
-1. Activá el switch **"Activar Facturación AFIP"**
-2. Hacé clic en **"Guardar Configuración"**
-
-¡Listo! El sistema está configurado para facturación electrónica.
+Reiniciá tu aplicación y verificá que los certificados se carguen correctamente. En el tab AFIP de Settings, deberías ver:
+- ✅ Certificado Maestro: Configurado
+- ✅ CUIT del Proveedor: (tu CUIT)
+- ✅ Modo: Homologación o Producción
 
 ---
 
-## Pruebas en Homologación
+## Configuración del Cliente
 
-### ¿Qué es Homologación?
+Esta configuración la hace **cada cliente** desde su cuenta.
 
-Es el ambiente de **pruebas** de AFIP. Todo lo que hagas acá NO es real:
-- ✅ Podés probar sin límites
-- ✅ Los CAE generados NO son válidos oficialmente
-- ✅ No afecta tu situación fiscal
+### Paso 1: Dar de Alta el Punto de Venta en AFIP
 
-### Datos de Prueba
+1. Ingresá a **AFIP** con tu **Clave Fiscal** (la del cliente)
+2. Andá a **"Administración de puntos de venta y domicilios"**
+3. Seleccioná tu empresa
+4. Hacé clic en **"A/B/M de Puntos de venta"**
+5. Agregá un nuevo punto de venta:
+   - **Número**: Elegí un número (1, 2, 3, etc.)
+   - **Sistema**: Seleccioná **"RECE para aplicativo y web services"** (para Responsables Inscriptos) o **"Factura electrónica - Monotributo - Web Services"** (para Monotributistas)
+   - **Domicilio**: Seleccioná tu domicilio fiscal
+6. Guardá el número de punto de venta asignado
 
-Usá estos datos para probar:
+### Paso 2: Autorizar al Proveedor en AFIP
 
-| Campo | Valor de Prueba |
-|-------|-----------------|
-| CUIT Cliente | `20000000000` |
-| Documento | `11111111` |
-| Importe | Cualquier valor |
+1. En **AFIP**, andá a **"Administrador de Relaciones de Clave Fiscal"**
+2. Hacé clic en **"Nueva Relación"**
+3. Buscá el servicio **"Factura Electrónica"** o **"wsfe"**
+4. En el campo **"Representante"**, ingresá el **CUIT del proveedor del sistema**
+5. Confirmá la relación
 
-### Generar Primera Factura de Prueba
+⚠️ **Importante**: Esta relación le permite al proveedor emitir facturas electrónicas en tu nombre, usando tu CUIT. El proveedor **NO** tiene acceso a tu Clave Fiscal ni a ningún otro dato de tu empresa.
 
-1. Andá al **POS**
-2. Creá una venta normal
-3. Al confirmar la venta, el sistema:
-   - Se conecta con AFIP automáticamente
-   - Obtiene el número de factura
-   - Genera el CAE
-   - Lo guarda en la venta
+### Paso 3: Configurar en el Sistema POS
 
-4. Verificá que la venta tenga:
-   - ✅ Número de factura
-   - ✅ CAE (Código de Autorización Electrónica)
-   - ✅ Fecha de vencimiento del CAE
-
-### Consultar Facturas en AFIP
-
-Podés verificar en:
-- **Web Service AFIP Homologación**: https://wswhomo.afip.gov.ar/wsfev1/
-
----
-
-## Paso a Producción
-
-⚠️ **IMPORTANTE**: Solo pasá a producción cuando hayas probado todo en homologación.
-
-### Requisitos
-
-- ✅ Todas las pruebas exitosas en homologación
-- ✅ Certificado de **PRODUCCIÓN** (diferente al de homologación)
-- ✅ Punto de venta habilitado en producción
-
-### Pasos
-
-1. Generá un **nuevo certificado** para producción (mismo proceso)
-2. Cargalo en AFIP para el servicio `wsfe` en **ambiente de producción**
-3. En el sistema, cambiá:
-   - **Modo de Operación**: `Producción`
-   - **Certificado**: Subí el nuevo certificado de producción
-   - **Clave Privada**: Subí la nueva clave de producción
+1. Iniciá sesión en el sistema POS
+2. Andá a **Configuración** → **AFIP**
+3. Completá:
+   - **Punto de Venta**: El número que obtuviste en el Paso 1
+   - **Tipo de Factura por Defecto**: Elegí A, B o C según tu situación fiscal
 4. Hacé clic en **"Guardar Configuración"**
-5. **"Obtener Token AFIP"** nuevamente
-6. **"Probar Conexión"** para verificar
-7. Activá la facturación
+5. Hacé clic en **"Probar Conexión"** para verificar
+6. Si todo funciona, activá el switch **"Activar Facturación AFIP"**
 
-⚠️ A partir de este momento, todas las facturas serán **REALES y OFICIALES**.
+¡Listo! Ya podés emitir facturas electrónicas desde el POS.
 
 ---
 
 ## Solución de Problemas
 
-### Error: "No se pudo obtener el token"
+### Error: "Configuración maestra AFIP no encontrada"
 
-**Posibles causas:**
+**Causa**: El proveedor no configuró las variables de entorno.
 
-1. **Certificado o clave incorrectos**
-   - Verificá que sean los archivos correctos
-   - Asegurate que el certificado esté en formato PEM
-   - La clave no debe tener contraseña
+**Solución** (Proveedor):
+1. Verificá que las variables estén definidas: `AFIP_PROVIDER_CUIT`, `AFIP_MASTER_CERT`, `AFIP_MASTER_KEY`
+2. Verificá el formato (PEM con `\n` para saltos de línea)
+3. Reiniciá la aplicación
 
-2. **Certificado no cargado en AFIP**
-   - Ingresá a AFIP y verificá que el servicio `wsfe` esté habilitado
-   - Revisá que el certificado sea el mismo
+### Error: "Punto de venta no configurado"
 
-3. **CUIT incorrecto**
-   - El CUIT del sistema debe coincidir con el del certificado
+**Causa**: El cliente no ingresó su punto de venta.
 
-### Error: "Certificado expirado"
+**Solución** (Cliente):
+1. Completá el campo "Punto de Venta" en Configuración → AFIP
+2. Guardá la configuración
 
-Los certificados vencen cada 2 años (o menos).
+### Error: "No se pudo obtener el token" o "Error al conectar con AFIP"
 
-**Solución:**
-1. Generá un nuevo certificado
-2. Cargalo en AFIP
-3. Actualizá en el sistema
+**Posibles causas**:
 
-### Error: "Token expirado"
+1. **Certificado no válido en AFIP**:
+   - Verificá que el certificado maestro esté cargado en AFIP
+   - Verificá que esté asociado al servicio `wsfe`
+   - Verificá que no haya expirado (vigencia: 2 años)
 
-Los tokens vencen cada 12 horas.
+2. **CUIT incorrecto**:
+   - El `AFIP_PROVIDER_CUIT` debe coincidir con el CUIT usado al generar el certificado
 
-**Solución:**
-- Hacé clic en **"Obtener Token AFIP"** nuevamente
+3. **Formato de certificado incorrecto**:
+   - Los certificados deben estar en formato PEM
+   - Deben incluir las líneas `-----BEGIN CERTIFICATE-----` y `-----END CERTIFICATE-----`
 
-### Error: "Punto de venta no autorizado"
-
-**Solución:**
-1. Verificá en AFIP qué puntos de venta tenés habilitados
-2. Actualizá el campo **"Punto de Venta"** en el sistema
+4. **Cliente no autorizó al proveedor**:
+   - El cliente debe crear la relación en "Administrador de Relaciones de Clave Fiscal"
+   - El CUIT del representante debe ser el del proveedor
 
 ### Error: "No se puede generar CAE"
 
-**Posibles causas:**
+**Posibles causas**:
 
-1. **Token expirado**: Renovalo
-2. **Datos de factura incorrectos**:
-   - Verificá CUIT del cliente
-   - Verificá importes
-   - Verificá que el tipo de factura sea correcto
-3. **Punto de venta sin stock de números**: Contactá a AFIP
+1. **Datos de factura incorrectos**:
+   - Verificá el CUIT o DNI del cliente
+   - Verificá los importes (total, neto, IVA)
+   - Verificá que el tipo de factura sea correcto (A, B, C)
+
+2. **Punto de venta sin stock de números**:
+   - Contactá a AFIP para solicitar más numeración
+
+3. **Cliente no está en condición de facturar**:
+   - Verificá la situación fiscal del cliente en AFIP
+   - Verificá que el cliente tenga alta en AFIP para el tipo de factura
 
 ---
 
@@ -271,31 +202,68 @@ Los tokens vencen cada 12 horas.
 | **WSAA** (Auth) | https://wsaahomo.afip.gov.ar/ws/services/LoginCms | https://wsaa.afip.gov.ar/ws/services/LoginCms |
 | **WSFEv1** (Facturas) | https://wswhomo.afip.gov.ar/wsfev1/service.asmx | https://servicios1.afip.gov.ar/wsfev1/service.asmx |
 
-### Códigos de Tipo de Comprobante
+### Flujo de Autenticación (Delegado)
 
-| Tipo | Código | Descripción |
-|------|--------|-------------|
-| A | 1 | Factura A |
-| B | 6 | Factura B |
-| C | 11 | Factura C |
+```
+┌─────────────┐
+│  PROVEEDOR  │  (tiene certificado maestro)
+└──────┬──────┘
+       │
+       │  1. Obtiene token WSAA (usando certificado maestro)
+       │
+       ▼
+┌─────────────┐
+│    AFIP     │
+└──────┬──────┘
+       │
+       │  2. Retorna token válido por 12 horas
+       │
+       ▼
+┌─────────────┐
+│   SISTEMA   │
+└──────┬──────┘
+       │
+       │  3. Factura usando: token + CUIT del CLIENTE
+       │
+       ▼
+┌─────────────┐
+│   CLIENTE   │  (solo configuró punto de venta)
+└─────────────┘
+```
 
-### Códigos de Documento
+### Diferencias con el Modelo Directo
 
-| Tipo | Código |
-|------|--------|
-| CUIT | 80 |
-| CUIL | 86 |
-| DNI | 96 |
-| Consumidor Final | 99 |
+| Característica | Modelo Directo | Modelo Delegado (SaaS) |
+|----------------|----------------|------------------------|
+| Certificado por tenant | ✅ Sí | ❌ No (uno maestro) |
+| Complejidad para el cliente | Alta | Baja |
+| Gestión de tokens | Por tenant | Centralizada |
+| Escalabilidad | Media | Alta |
+| Costo operativo | Alto | Bajo |
+| Mejor para | Pocas empresas | Muchas empresas (SaaS) |
 
-### Códigos de IVA
+---
 
-| Alícuota | Código |
-|----------|--------|
-| 0% | 3 |
-| 10.5% | 4 |
-| 21% | 5 |
-| 27% | 6 |
+## Paso a Producción
+
+### Checklist Proveedor
+
+- [ ] Generar certificado de PRODUCCIÓN (diferente al de homologación)
+- [ ] Cargar certificado en AFIP ambiente de producción
+- [ ] Actualizar `AFIP_MODE="produccion"` en variables de entorno
+- [ ] Actualizar `AFIP_MASTER_CERT` y `AFIP_MASTER_KEY` con certificado de producción
+- [ ] Reiniciar aplicación
+- [ ] Verificar que el tab AFIP muestre "Modo: Producción"
+
+### Checklist Cliente
+
+- [ ] Repetir Paso 1 y Paso 2 en ambiente de PRODUCCIÓN de AFIP
+- [ ] Verificar configuración en el sistema
+- [ ] Probar conexión
+- [ ] Generar factura de prueba
+- [ ] Verificar CAE en comprobante
+
+⚠️ **Importante**: A partir de este momento, todas las facturas serán **REALES y OFICIALES**.
 
 ---
 
@@ -303,7 +271,7 @@ Los tokens vencen cada 12 horas.
 
 Si tenés problemas:
 
-1. **Revisá la consola del navegador** (F12) para ver errores
+1. **Verificá la consola del navegador** (F12) para errores en el cliente
 2. **Verificá los logs del servidor** para detalles técnicos
 3. **Consultá la documentación oficial de AFIP**:
    - [Manual WSFEv1](http://www.afip.gob.ar/fe/documentos/manual_desarrollador_COMPG_v2_10.pdf)
@@ -314,32 +282,4 @@ Si tenés problemas:
 
 ---
 
-## Checklist de Implementación
-
-Usá este checklist para verificar que todo esté correcto:
-
-### Homologación
-- [ ] Certificado generado
-- [ ] Certificado cargado en AFIP
-- [ ] Certificado subido al sistema
-- [ ] Clave privada subida al sistema
-- [ ] Modo configurado en "Homologación"
-- [ ] Punto de venta configurado
-- [ ] Token AFIP obtenido exitosamente
-- [ ] Conexión probada exitosamente
-- [ ] Primera factura de prueba generada
-- [ ] CAE recibido correctamente
-
-### Producción
-- [ ] Todo lo anterior probado en homologación
-- [ ] Nuevo certificado generado para producción
-- [ ] Certificado de producción cargado en AFIP
-- [ ] Modo cambiado a "Producción"
-- [ ] Certificado de producción subido al sistema
-- [ ] Token de producción obtenido
-- [ ] Conexión de producción probada
-- [ ] Primera factura real generada y verificada
-
----
-
-¡Facturación Electrónica Lista! 🎉
+¡Facturación Electrónica Delegada Lista! 🎉

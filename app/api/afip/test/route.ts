@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/session"
 import { prisma } from "@/lib/db"
-import { testAfipConnection, type AfipConfig, type AfipCredentials } from "@/lib/afip"
+import {
+  testAfipConnection,
+  getMasterAfipConfig,
+  getAfipCredentials,
+  type TenantAfipConfig,
+} from "@/lib/afip"
 
 /**
  * GET /api/afip/test
- * Test connection to AFIP web services
+ * Test connection to AFIP web services using master credentials (delegated model)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -18,13 +23,7 @@ export async function GET(request: NextRequest) {
       where: { id: user.tenantId },
       select: {
         cuit: true,
-        afipMode: true,
-        afipCert: true,
-        afipKey: true,
         afipPuntoVenta: true,
-        afipToken: true,
-        afipSign: true,
-        afipTokenExpiresAt: true,
       },
     })
 
@@ -32,59 +31,52 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 })
     }
 
-    // Check configuration
-    if (!tenant.afipCert || !tenant.afipKey) {
+    // Check tenant configuration
+    if (!tenant.afipPuntoVenta) {
       return NextResponse.json(
         {
           success: false,
-          error: "Configuración incompleta: certificado y clave privada requeridos",
+          error: "Punto de venta no configurado",
         },
         { status: 400 }
       )
     }
 
-    if (!tenant.afipToken || !tenant.afipSign || !tenant.afipTokenExpiresAt) {
+    // Get master configuration
+    let masterConfig
+    try {
+      masterConfig = getMasterAfipConfig()
+    } catch (error: any) {
       return NextResponse.json(
         {
           success: false,
-          error: "Token no disponible. Debes obtener credenciales primero.",
+          error:
+            "Configuración maestra AFIP no encontrada. El proveedor debe configurar las variables de entorno.",
         },
-        { status: 400 }
+        { status: 500 }
       )
     }
 
-    // Check if token is expired
-    if (new Date(tenant.afipTokenExpiresAt) < new Date()) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Token expirado. Debes renovar las credenciales.",
-        },
-        { status: 400 }
-      )
+    const tenantConfig: TenantAfipConfig = {
+      tenantCuit: tenant.cuit,
+      puntoVenta: tenant.afipPuntoVenta,
     }
 
-    const config: AfipConfig = {
-      mode: (tenant.afipMode as "homologacion" | "produccion") || "homologacion",
-      cuit: tenant.cuit,
-      cert: tenant.afipCert,
-      key: tenant.afipKey,
-      puntoVenta: tenant.afipPuntoVenta || 1,
-    }
+    // Get fresh credentials from AFIP
+    const credentials = await getAfipCredentials(masterConfig)
 
-    const credentials: AfipCredentials = {
-      token: tenant.afipToken,
-      sign: tenant.afipSign,
-      expiresAt: new Date(tenant.afipTokenExpiresAt),
-    }
-
-    const isConnected = await testAfipConnection(config, credentials)
+    // Test connection
+    const isConnected = await testAfipConnection(
+      masterConfig,
+      tenantConfig,
+      credentials
+    )
 
     return NextResponse.json({
       success: isConnected,
-      mode: tenant.afipMode,
+      mode: masterConfig.mode,
       message: isConnected
-        ? "Conexión exitosa con AFIP"
+        ? "Conexión exitosa con AFIP usando certificado maestro"
         : "Error al conectar con AFIP",
     })
   } catch (error: any) {

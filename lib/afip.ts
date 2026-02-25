@@ -1,6 +1,11 @@
 /**
- * AFIP Integration Service
+ * AFIP Integration Service (Delegated/SaaS Model)
  * Handles authentication (WSAA) and electronic invoicing (WSFEv1)
+ *
+ * In this model:
+ * - The provider (you) has ONE master certificate
+ * - Clients authorize your CUIT from their AFIP
+ * - You invoice on behalf of clients using master cert + their CUIT
  */
 
 import { parseStringPromise, Builder } from "xml2js"
@@ -8,12 +13,22 @@ import { createSign, createHash } from "crypto"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface AfipConfig {
+/**
+ * Master AFIP configuration (provider-level, from environment variables)
+ */
+export interface MasterAfipConfig {
   mode: "homologacion" | "produccion"
-  cuit: string
-  cert: string // PEM format
-  key: string // PEM format
-  puntoVenta: number
+  providerCuit: string // Provider's CUIT
+  cert: string // Master certificate in PEM format
+  key: string // Master private key in PEM format
+}
+
+/**
+ * Tenant AFIP configuration (per tenant, from database)
+ */
+export interface TenantAfipConfig {
+  tenantCuit: string // Client's CUIT
+  puntoVenta: number // Client's punto de venta
 }
 
 export interface AfipCredentials {
@@ -65,6 +80,35 @@ const WSFE_URLS = {
   produccion: "https://servicios1.afip.gov.ar/wsfev1/service.asmx",
 }
 
+// ─── Configuration ─────────────────────────────────────────────────────────────
+
+/**
+ * Get master AFIP configuration from environment variables
+ */
+export function getMasterAfipConfig(): MasterAfipConfig {
+  const mode = (process.env.AFIP_MODE as "homologacion" | "produccion") || "homologacion"
+  const providerCuit = process.env.AFIP_PROVIDER_CUIT || ""
+  const cert = process.env.AFIP_MASTER_CERT || ""
+  const key = process.env.AFIP_MASTER_KEY || ""
+
+  if (!providerCuit || !cert || !key) {
+    throw new Error(
+      "Missing AFIP master configuration. Please set AFIP_PROVIDER_CUIT, AFIP_MASTER_CERT, and AFIP_MASTER_KEY environment variables."
+    )
+  }
+
+  // Replace \n with actual newlines if they're escaped in env vars
+  const certPem = cert.replace(/\\n/g, "\n")
+  const keyPem = key.replace(/\\n/g, "\n")
+
+  return {
+    mode,
+    providerCuit,
+    cert: certPem,
+    key: keyPem,
+  }
+}
+
 // ─── WSAA: Authentication ─────────────────────────────────────────────────────
 
 /**
@@ -114,14 +158,14 @@ function signTRA(tra: string, privateKey: string, certificate: string): string {
 }
 
 /**
- * Call WSAA to get authentication credentials
+ * Call WSAA to get authentication credentials using master certificate
  */
 export async function getAfipCredentials(
-  config: AfipConfig
+  masterConfig: MasterAfipConfig
 ): Promise<AfipCredentials> {
   try {
     const tra = generateTRA("wsfe")
-    const cms = signTRA(tra, config.key, config.cert)
+    const cms = signTRA(tra, masterConfig.key, masterConfig.cert)
 
     const soapRequest = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov">
@@ -133,7 +177,7 @@ export async function getAfipCredentials(
   </soapenv:Body>
 </soapenv:Envelope>`
 
-    const url = WSAA_URLS[config.mode]
+    const url = WSAA_URLS[masterConfig.mode]
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -173,10 +217,11 @@ export async function getAfipCredentials(
 // ─── WSFEv1: Electronic Invoicing ─────────────────────────────────────────────
 
 /**
- * Get last authorized invoice number
+ * Get last authorized invoice number for a tenant
  */
 export async function getLastInvoiceNumber(
-  config: AfipConfig,
+  masterConfig: MasterAfipConfig,
+  tenantConfig: TenantAfipConfig,
   credentials: AfipCredentials,
   invoiceType: number
 ): Promise<number> {
@@ -189,15 +234,15 @@ export async function getLastInvoiceNumber(
       <ar:Auth>
         <ar:Token>${credentials.token}</ar:Token>
         <ar:Sign>${credentials.sign}</ar:Sign>
-        <ar:Cuit>${config.cuit}</ar:Cuit>
+        <ar:Cuit>${tenantConfig.tenantCuit}</ar:Cuit>
       </ar:Auth>
-      <ar:PtoVta>${config.puntoVenta}</ar:PtoVta>
+      <ar:PtoVta>${tenantConfig.puntoVenta}</ar:PtoVta>
       <ar:CbteTipo>${invoiceType}</ar:CbteTipo>
     </ar:FECompUltimoAutorizado>
   </soapenv:Body>
 </soapenv:Envelope>`
 
-    const url = WSFE_URLS[config.mode]
+    const url = WSFE_URLS[masterConfig.mode]
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -228,10 +273,11 @@ export async function getLastInvoiceNumber(
 }
 
 /**
- * Generate CAE (Código de Autorización Electrónica) for invoice
+ * Generate CAE (Código de Autorización Electrónica) for a tenant's invoice
  */
 export async function generateCAE(
-  config: AfipConfig,
+  masterConfig: MasterAfipConfig,
+  tenantConfig: TenantAfipConfig,
   credentials: AfipCredentials,
   invoice: AfipInvoiceData
 ): Promise<AfipInvoiceResult> {
@@ -259,7 +305,7 @@ export async function generateCAE(
       <ar:Auth>
         <ar:Token>${credentials.token}</ar:Token>
         <ar:Sign>${credentials.sign}</ar:Sign>
-        <ar:Cuit>${config.cuit}</ar:Cuit>
+        <ar:Cuit>${tenantConfig.tenantCuit}</ar:Cuit>
       </ar:Auth>
       <ar:FeCAEReq>
         <ar:FeCabReq>
@@ -291,7 +337,7 @@ export async function generateCAE(
   </soapenv:Body>
 </soapenv:Envelope>`
 
-    const url = WSFE_URLS[config.mode]
+    const url = WSFE_URLS[masterConfig.mode]
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -338,10 +384,11 @@ export async function generateCAE(
 }
 
 /**
- * Test AFIP connection
+ * Test AFIP connection for a tenant
  */
 export async function testAfipConnection(
-  config: AfipConfig,
+  masterConfig: MasterAfipConfig,
+  tenantConfig: TenantAfipConfig,
   credentials: AfipCredentials
 ): Promise<boolean> {
   try {
@@ -353,7 +400,7 @@ export async function testAfipConnection(
   </soapenv:Body>
 </soapenv:Envelope>`
 
-    const url = WSFE_URLS[config.mode]
+    const url = WSFE_URLS[masterConfig.mode]
     const response = await fetch(url, {
       method: "POST",
       headers: {

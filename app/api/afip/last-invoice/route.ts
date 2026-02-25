@@ -4,13 +4,14 @@ import { prisma } from "@/lib/db"
 import {
   getLastInvoiceNumber,
   getInvoiceTypeCode,
-  type AfipConfig,
-  type AfipCredentials,
+  getMasterAfipConfig,
+  getAfipCredentials,
+  type TenantAfipConfig,
 } from "@/lib/afip"
 
 /**
  * GET /api/afip/last-invoice?type=B
- * Get last authorized invoice number from AFIP
+ * Get last authorized invoice number from AFIP (delegated model)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -33,13 +34,7 @@ export async function GET(request: NextRequest) {
       where: { id: user.tenantId },
       select: {
         cuit: true,
-        afipMode: true,
-        afipCert: true,
-        afipKey: true,
         afipPuntoVenta: true,
-        afipToken: true,
-        afipSign: true,
-        afipTokenExpiresAt: true,
       },
     })
 
@@ -47,45 +42,43 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 })
     }
 
-    // Validate configuration
-    if (!tenant.afipCert || !tenant.afipKey) {
+    // Validate tenant configuration
+    if (!tenant.afipPuntoVenta) {
       return NextResponse.json(
-        { error: "Configuración AFIP incompleta" },
+        { error: "Punto de venta no configurado" },
         { status: 400 }
       )
     }
 
-    if (!tenant.afipToken || !tenant.afipSign || !tenant.afipTokenExpiresAt) {
+    // Get master configuration
+    let masterConfig
+    try {
+      masterConfig = getMasterAfipConfig()
+    } catch (error: any) {
       return NextResponse.json(
-        { error: "Token no disponible. Debes obtener credenciales primero." },
-        { status: 400 }
+        {
+          error:
+            "Configuración maestra AFIP no encontrada. El proveedor debe configurar las variables de entorno.",
+        },
+        { status: 500 }
       )
     }
 
-    // Check if token is expired
-    if (new Date(tenant.afipTokenExpiresAt) < new Date()) {
-      return NextResponse.json(
-        { error: "Token expirado. Debes renovar las credenciales." },
-        { status: 400 }
-      )
+    const tenantConfig: TenantAfipConfig = {
+      tenantCuit: tenant.cuit,
+      puntoVenta: tenant.afipPuntoVenta,
     }
 
-    const config: AfipConfig = {
-      mode: (tenant.afipMode as "homologacion" | "produccion") || "homologacion",
-      cuit: tenant.cuit,
-      cert: tenant.afipCert,
-      key: tenant.afipKey,
-      puntoVenta: tenant.afipPuntoVenta || 1,
-    }
-
-    const credentials: AfipCredentials = {
-      token: tenant.afipToken,
-      sign: tenant.afipSign,
-      expiresAt: new Date(tenant.afipTokenExpiresAt),
-    }
+    // Get fresh credentials from AFIP
+    const credentials = await getAfipCredentials(masterConfig)
 
     const typeCode = getInvoiceTypeCode(invoiceType)
-    const lastNumber = await getLastInvoiceNumber(config, credentials, typeCode)
+    const lastNumber = await getLastInvoiceNumber(
+      masterConfig,
+      tenantConfig,
+      credentials,
+      typeCode
+    )
 
     return NextResponse.json({
       type: invoiceType,

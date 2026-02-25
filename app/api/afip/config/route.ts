@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser } from "@/lib/session"
 import { prisma } from "@/lib/db"
+import { getMasterAfipConfig } from "@/lib/afip"
 
 /**
  * GET /api/afip/config
- * Get AFIP configuration for the tenant (without sensitive data)
+ * Get AFIP configuration for the tenant (delegated model)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -17,12 +18,9 @@ export async function GET(request: NextRequest) {
       where: { id: user.tenantId },
       select: {
         cuit: true,
-        afipMode: true,
         afipPuntoVenta: true,
         afipDefaultInvoiceType: true,
         afipEnabled: true,
-        afipTokenExpiresAt: true,
-        // Don't return cert, key, token, or sign for security
       },
     })
 
@@ -30,23 +28,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Tenant no encontrado" }, { status: 404 })
     }
 
-    // Check if credentials are configured
-    const fullTenant = await prisma.tenant.findUnique({
-      where: { id: user.tenantId },
-      select: {
-        afipCert: true,
-        afipKey: true,
-      },
-    })
-
-    const hasCredentials = !!(fullTenant?.afipCert && fullTenant?.afipKey)
-    const hasValidToken =
-      tenant.afipTokenExpiresAt && tenant.afipTokenExpiresAt > new Date()
+    // Check if master credentials are configured (provider-level)
+    let hasMasterCredentials = false
+    let masterMode = "homologacion"
+    let providerCuit = ""
+    try {
+      const masterConfig = getMasterAfipConfig()
+      hasMasterCredentials = true
+      masterMode = masterConfig.mode
+      providerCuit = masterConfig.providerCuit
+    } catch (error) {
+      // Master credentials not configured
+    }
 
     return NextResponse.json({
       ...tenant,
-      hasCredentials,
-      hasValidToken,
+      hasMasterCredentials,
+      masterMode,
+      providerCuit,
     })
   } catch (error: any) {
     console.error("GET /api/afip/config error:", error)
@@ -59,7 +58,8 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/afip/config
- * Update AFIP configuration (ADMIN only)
+ * Update AFIP configuration (ADMIN only) - Delegated model
+ * Only updates tenant-specific settings (punto venta, invoice type, enabled)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -76,22 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const {
-      afipMode,
-      afipCert,
-      afipKey,
-      afipPuntoVenta,
-      afipDefaultInvoiceType,
-      afipEnabled,
-    } = body
-
-    // Validate mode
-    if (afipMode && !["homologacion", "produccion"].includes(afipMode)) {
-      return NextResponse.json(
-        { error: 'Modo debe ser "homologacion" o "produccion"' },
-        { status: 400 }
-      )
-    }
+    const { afipPuntoVenta, afipDefaultInvoiceType, afipEnabled } = body
 
     // Validate invoice type
     if (
@@ -112,11 +97,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Build update data
+    // Build update data (only tenant-specific settings)
     const updateData: any = {}
-    if (afipMode !== undefined) updateData.afipMode = afipMode
-    if (afipCert !== undefined) updateData.afipCert = afipCert
-    if (afipKey !== undefined) updateData.afipKey = afipKey
     if (afipPuntoVenta !== undefined) updateData.afipPuntoVenta = afipPuntoVenta
     if (afipDefaultInvoiceType !== undefined)
       updateData.afipDefaultInvoiceType = afipDefaultInvoiceType
@@ -127,11 +109,9 @@ export async function POST(request: NextRequest) {
       data: updateData,
       select: {
         cuit: true,
-        afipMode: true,
         afipPuntoVenta: true,
         afipDefaultInvoiceType: true,
         afipEnabled: true,
-        afipTokenExpiresAt: true,
       },
     })
 
