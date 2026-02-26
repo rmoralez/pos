@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { ArrowLeft, Receipt, User, Calendar, CreditCard, Package } from "lucide-react"
+import { ArrowLeft, Receipt, User, Calendar, CreditCard, Package, FileText, Download } from "lucide-react"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { toast } from "@/hooks/use-toast"
@@ -49,6 +49,16 @@ interface SalePayment {
   reference?: string
 }
 
+interface Invoice {
+  id: string
+  type: string
+  number: string
+  puntoVenta: number
+  cae: string | null
+  caeExpiration: string | null
+  status: string
+}
+
 interface Sale {
   id: string
   saleNumber: string
@@ -79,6 +89,7 @@ interface Sale {
     id: string
     name: string
   }
+  invoice?: Invoice
 }
 
 export default function SaleDetailPage({ params }: { params: { id: string } }) {
@@ -146,6 +157,22 @@ export default function SaleDetailPage({ params }: { params: { id: string } }) {
 
   const formatCurrency = (value: number) => {
     return `$${Number(value).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
+  const handleDownloadPDF = () => {
+    if (!sale) return
+
+    const link = document.createElement("a")
+    link.href = `/api/sales/${sale.id}/invoice-pdf`
+    link.download = `Factura-${sale.invoice?.type}-${sale.invoice?.puntoVenta.toString().padStart(5, "0")}-${sale.invoice?.number.padStart(8, "0")}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    toast({
+      title: "PDF generado",
+      description: "El PDF de la factura se está descargando",
+    })
   }
 
   if (isLoading) {
@@ -388,6 +415,72 @@ export default function SaleDetailPage({ params }: { params: { id: string } }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* AFIP Invoice */}
+      {sale.invoice && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Factura Electrónica AFIP
+                </CardTitle>
+                <CardDescription>Comprobante autorizado por AFIP</CardDescription>
+              </div>
+              {sale.invoice.cae && (
+                <Button onClick={handleDownloadPDF} variant="outline" size="sm">
+                  <Download className="mr-2 h-4 w-4" />
+                  Descargar PDF
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm text-muted-foreground">Tipo de Comprobante</p>
+                  <p className="text-lg font-bold">Factura {sale.invoice.type}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Número</p>
+                  <p className="text-lg font-mono">
+                    {sale.invoice.puntoVenta.toString().padStart(5, "0")}-
+                    {sale.invoice.number.padStart(8, "0")}
+                  </p>
+                </div>
+              </div>
+              {sale.invoice.cae && (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm text-muted-foreground">CAE</p>
+                    <p className="text-lg font-mono">{sale.invoice.cae}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Vencimiento CAE</p>
+                    <p className="text-lg">
+                      {sale.invoice.caeExpiration
+                        ? format(new Date(sale.invoice.caeExpiration), "dd/MM/yyyy")
+                        : "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <Badge variant={sale.invoice.status === "APPROVED" ? "default" : "secondary"}>
+                      {sale.invoice.status === "APPROVED" ? "Autorizada" : sale.invoice.status}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+              {!sale.invoice.cae && (
+                <div className="flex items-center justify-center text-muted-foreground">
+                  <p className="text-sm">Factura creada sin autorización de AFIP</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Additional Info */}
       {(sale.cashRegister || sale.location) && (

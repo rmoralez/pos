@@ -119,6 +119,14 @@ export async function POST(request: NextRequest) {
       importe: data.importe,
     }))
 
+    // Determine IVA condition based on invoice type and doc type
+    let condicionIva = 5 // Default: Consumidor Final
+    if (invoiceType === "A" || invoiceType === "B") {
+      condicionIva = 1 // Responsable Inscripto
+    } else if (invoiceType === "C") {
+      condicionIva = 5 // Consumidor Final
+    }
+
     // Build invoice data
     const invoiceData: AfipInvoiceData = {
       tipo: getInvoiceTypeCode(invoiceType as "A" | "B" | "C"),
@@ -128,6 +136,7 @@ export async function POST(request: NextRequest) {
       concepto: 1, // 1=Productos
       tipoDoc: getDocumentTypeCode(customerDocType || "Consumidor Final"),
       nroDoc: customerDocNumber || "0",
+      condicionIva,
       importeTotal: total,
       importeNeto: netAmount || 0,
       importeIVA: ivaAmount || 0,

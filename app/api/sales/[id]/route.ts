@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getCurrentUser } from "@/lib/session"
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/session"
 
 /**
  * GET /api/sales/[id]
- * Fetch a single sale by ID with all related data
+ * Get sale by ID with all details
  */
 export async function GET(
   request: NextRequest,
@@ -12,8 +12,8 @@ export async function GET(
 ) {
   try {
     const user = await getCurrentUser()
-    if (!user) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 })
+    if (!user?.tenantId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const sale = await prisma.sale.findFirst({
@@ -24,20 +24,8 @@ export async function GET(
       include: {
         items: {
           include: {
-            product: {
-              select: {
-                id: true,
-                name: true,
-                sku: true,
-              },
-            },
-            ProductVariant: {
-              select: {
-                id: true,
-                sku: true,
-                variantValues: true,
-              },
-            },
+            product: true,
+            ProductVariant: true,
           },
         },
         payments: true,
@@ -47,14 +35,7 @@ export async function GET(
             email: true,
           },
         },
-        customer: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            phone: true,
-          },
-        },
+        customer: true,
         cashRegister: {
           select: {
             id: true,
@@ -66,21 +47,19 @@ export async function GET(
             name: true,
           },
         },
+        invoice: true,
       },
     })
 
     if (!sale) {
-      return NextResponse.json(
-        { error: "Venta no encontrada" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "Sale not found" }, { status: 404 })
     }
 
     return NextResponse.json(sale)
-  } catch (error) {
-    console.error("GET sale by ID error:", error)
+  } catch (error: any) {
+    console.error("GET /api/sales/[id] error:", error)
     return NextResponse.json(
-      { error: "Error interno del servidor" },
+      { error: "Internal server error" },
       { status: 500 }
     )
   }

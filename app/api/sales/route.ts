@@ -4,6 +4,14 @@ import { getCurrentUser } from "@/lib/session"
 import { z } from "zod"
 import { Decimal } from "@prisma/client/runtime/library"
 import { calculateDiscountAmount, type DiscountType } from "@/lib/pricing"
+import {
+  getMasterAfipConfig,
+  getAfipCredentials,
+  getLastInvoiceNumber,
+  generateCAE,
+  type AfipInvoiceData,
+  type TenantAfipConfig,
+} from "@/lib/afip"
 
 const PaymentMethodEnum = z.enum(["CASH", "DEBIT_CARD", "CREDIT_CARD", "TRANSFER", "QR", "CHECK", "ACCOUNT", "OTHER"])
 
@@ -610,6 +618,176 @@ export async function POST(req: Request) {
       maxWait: 30000, // 30 seconds max wait to acquire a connection
       timeout: 30000, // 30 seconds max transaction time
     })
+
+    // ─── AFIP Electronic Invoicing ───────────────────────────────────────────
+    // Try to emit electronic invoice after sale is completed
+    // This is done outside the main transaction to avoid rolling back the sale if AFIP fails
+    try {
+      console.log("[SALES API] Starting AFIP invoice generation")
+      const masterConfig = getMasterAfipConfig()
+      console.log("[SALES API] Master config loaded, mode:", masterConfig.mode)
+
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: user.tenantId },
+        select: { cuit: true, afipPuntoVenta: true },
+      })
+
+      if (!tenant || !tenant.afipPuntoVenta) {
+        console.warn("[SALES API] AFIP not configured for tenant, skipping invoice")
+        return NextResponse.json(sale, { status: 201 })
+      }
+
+      const tenantConfig: TenantAfipConfig = {
+        tenantCuit: tenant.cuit,
+        puntoVenta: tenant.afipPuntoVenta,
+      }
+
+      // Get AFIP credentials (cached)
+      const credentials = await getAfipCredentials(masterConfig)
+      console.log("[SALES API] AFIP credentials obtained")
+
+      // Get customer info first to determine invoice type
+      const customer = sale.customerId
+        ? await prisma.customer.findUnique({ where: { id: sale.customerId } })
+        : null
+
+      // Determine document type, number, IVA condition, and invoice type
+      let tipoDoc = 99 // 99 = Consumidor Final
+      let nroDoc = "0"
+      let condicionIva = 5 // 5 = Consumidor Final (default)
+      let actualInvoiceType = 11 // 11 = Factura C (default for Consumidor Final)
+
+      if (customer && customer.documentType && customer.documentNumber) {
+        if (customer.documentType === "CUIT" || customer.documentType === "80") {
+          tipoDoc = 80 // CUIT
+          nroDoc = customer.documentNumber
+          condicionIva = 1 // 1 = Responsable Inscripto (assumes CUIT = registered business)
+          actualInvoiceType = 6 // 6 = Factura B (for registered business customer)
+        } else if (customer.documentType === "DNI" || customer.documentType === "96") {
+          tipoDoc = 96 // DNI
+          nroDoc = customer.documentNumber
+          condicionIva = 5 // 5 = Consumidor Final
+          actualInvoiceType = 11 // 11 = Factura C (for final consumer)
+        }
+      }
+
+      console.log("[SALES API] Invoice type:", actualInvoiceType, "- IVA Condition:", condicionIva, "- Doc:", tipoDoc)
+
+      // Get next invoice number from AFIP (for the correct invoice type)
+      const lastNumber = await getLastInvoiceNumber(
+        masterConfig,
+        tenantConfig,
+        credentials,
+        actualInvoiceType
+      )
+      const invoiceNumber = lastNumber + 1
+      console.log("[SALES API] Next invoice number:", invoiceNumber)
+
+      // Calculate IVA breakdown
+      const ivaAlicuotas: Array<{ id: number; baseImp: number; importe: number }> = []
+      const taxRateMap = new Map<number, { base: number; amount: number }>()
+
+      for (const item of sale.items) {
+        const taxRate = Number(item.taxRate)
+        const existing = taxRateMap.get(taxRate) || { base: 0, amount: 0 }
+        existing.base += Number(item.subtotal)
+        existing.amount += Number(item.taxAmount)
+        taxRateMap.set(taxRate, existing)
+      }
+
+      // Map tax rates to AFIP alicuota IDs
+      // 3 = 0%, 4 = 10.5%, 5 = 21%, 6 = 27%
+      for (const [taxRate, data] of Array.from(taxRateMap.entries())) {
+        let alicuotaId = 5 // Default to 21%
+        if (taxRate === 0) alicuotaId = 3
+        else if (taxRate === 10.5) alicuotaId = 4
+        else if (taxRate === 21) alicuotaId = 5
+        else if (taxRate === 27) alicuotaId = 6
+
+        ivaAlicuotas.push({
+          id: alicuotaId,
+          baseImp: data.base,
+          importe: data.amount,
+        })
+      }
+
+      // Prepare invoice data for AFIP
+      const invoiceData: AfipInvoiceData = {
+        tipo: actualInvoiceType,
+        puntoVenta: tenantConfig.puntoVenta,
+        numero: invoiceNumber,
+        fecha: new Date().toISOString().slice(0, 10).replace(/-/g, ""), // YYYYMMDD
+        concepto: 1, // 1 = Productos, 2 = Servicios, 3 = Productos y Servicios
+        tipoDoc,
+        nroDoc,
+        condicionIva,
+        importeTotal: Number(sale.total),
+        importeNeto: Number(sale.subtotal),
+        importeIVA: Number(sale.taxAmount),
+        importeExento: 0,
+        importeTributos: 0,
+        moneda: "PES",
+        cotizacion: 1,
+        alicuotas: ivaAlicuotas,
+      }
+
+      console.log("[SALES API] Generating CAE from AFIP...")
+      const caeResult = await generateCAE(masterConfig, tenantConfig, credentials, invoiceData)
+      console.log("[SALES API] CAE result:", caeResult.resultado, "- CAE:", caeResult.cae)
+
+      // Check if AFIP approved the invoice
+      if (caeResult.resultado !== "A") {
+        const observations = caeResult.observaciones?.join(", ") || "Sin detalles"
+        console.error("[SALES API] AFIP rejected invoice:", observations)
+        throw new Error(`AFIP rechazó la factura: ${observations}`)
+      }
+
+      // Parse CAE expiration date (format: YYYYMMDD)
+      if (!caeResult.caeFchVto || caeResult.caeFchVto.length !== 8) {
+        throw new Error("CAE expiration date is invalid")
+      }
+
+      const caeExpYear = parseInt(caeResult.caeFchVto.substring(0, 4))
+      const caeExpMonth = parseInt(caeResult.caeFchVto.substring(4, 6))
+      const caeExpDay = parseInt(caeResult.caeFchVto.substring(6, 8))
+      const caeExpiration = new Date(caeExpYear, caeExpMonth - 1, caeExpDay)
+
+      // Validate the date is valid
+      if (isNaN(caeExpiration.getTime())) {
+        throw new Error("CAE expiration date could not be parsed")
+      }
+
+      // Create Invoice record
+      const invoiceTypeLabel = actualInvoiceType === 1 ? "A" : actualInvoiceType === 6 ? "B" : "C"
+
+      await prisma.invoice.create({
+        data: {
+          type: invoiceTypeLabel,
+          number: invoiceNumber.toString(),
+          puntoVenta: tenantConfig.puntoVenta,
+          cae: caeResult.cae,
+          caeExpiration,
+          subtotal: sale.subtotal,
+          taxAmount: sale.taxAmount,
+          total: sale.total,
+          customerName: customer?.name || "Consumidor Final",
+          customerDocType: tipoDoc.toString(),
+          customerDocNum: nroDoc,
+          status: "APPROVED",
+          afipResponse: JSON.stringify(caeResult),
+          tenantId: user.tenantId,
+          sale: {
+            connect: { id: sale.id },
+          },
+        },
+      })
+
+      console.log("[SALES API] Invoice created successfully with CAE:", caeResult.cae)
+    } catch (afipError: any) {
+      console.error("[SALES API] AFIP invoice generation failed:", afipError.message)
+      // Don't fail the sale, just log the error
+      // The invoice can be generated manually later
+    }
 
     return NextResponse.json(sale, { status: 201 })
   } catch (error: any) {

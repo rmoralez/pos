@@ -81,6 +81,20 @@ export async function GET(request: NextRequest) {
     })
   } catch (error: any) {
     console.error("GET /api/afip/test error:", error)
+
+    // Handle "already authenticated" error with helpful message
+    if (error.message?.includes("Ya existe una autenticación válida")) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Autenticación AFIP temporalmente bloqueada",
+          details:
+            "AFIP detectó una autenticación reciente y no permite solicitar un nuevo token aún. Esto es normal después de pruebas exitosas. Por favor, espere 10-15 minutos e intente nuevamente, o realice ventas normalmente (el sistema usará tokens en caché).",
+        },
+        { status: 429 } // 429 = Too Many Requests
+      )
+    }
+
     return NextResponse.json(
       {
         success: false,
