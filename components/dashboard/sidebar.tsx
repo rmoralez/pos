@@ -77,6 +77,9 @@ const navigationSections: NavigationSection[] = [
   {
     title: "REPORTES",
     items: [
+      { name: "Dashboard Diario", href: "/dashboard/analytics", icon: BarChart3 },
+      { name: "Reporte de Ventas", href: "/dashboard/analytics/ventas", icon: Receipt },
+      { name: "Análisis de Catálogo", href: "/dashboard/analytics/catalogo", icon: Package },
       { name: "P&L / Resultado", href: "/dashboard/reports/profit-loss", icon: BarChart3 },
     ],
   },
