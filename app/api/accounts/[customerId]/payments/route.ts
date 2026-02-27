@@ -8,12 +8,17 @@ const paymentAllocationSchema = z.object({
   amount: z.number().positive(),
 })
 
+const paymentEntrySchema = z.object({
+  method: z.enum(["CASH", "DEBIT_CARD", "CREDIT_CARD", "TRANSFER", "QR", "CHECK"]),
+  amount: z.number().positive(),
+})
+
 const paymentSchema = z.object({
   amount: z.number().positive(),
   concept: z.string().min(1),
   reference: z.string().optional(),
-  paymentMethod: z.string().optional(),
   paymentDate: z.string().optional(),
+  payments: z.array(paymentEntrySchema).min(1),
   allocations: z.array(paymentAllocationSchema).optional(),
 })
 
@@ -143,6 +148,51 @@ export async function POST(
           balance: movement.balanceAfter,
         },
       })
+
+      // Register each payment method in corresponding cash accounts
+      for (const payment of data.payments) {
+        // Find the payment method account mapping
+        const paymentMethodAccount = await tx.paymentMethodAccount.findFirst({
+          where: {
+            tenantId: user.tenantId,
+            paymentMethod: payment.method,
+          },
+          include: {
+            CashAccount: true,
+          },
+        })
+
+        if (!paymentMethodAccount) {
+          throw new Error(
+            `No cash account configured for payment method: ${payment.method}`
+          )
+        }
+
+        const cashAccount = paymentMethodAccount.CashAccount
+        const balanceBefore = cashAccount.currentBalance
+        const balanceAfter = Number(balanceBefore) + payment.amount
+
+        // Create cash account movement
+        await tx.cashAccountMovement.create({
+          data: {
+            type: "RECEIVED",
+            amount: payment.amount,
+            concept: `Cobro de cuenta corriente - ${data.concept}`,
+            balanceBefore,
+            balanceAfter,
+            reference: data.reference,
+            cashAccountId: cashAccount.id,
+            tenantId: user.tenantId,
+            userId: user.id,
+          },
+        })
+
+        // Update cash account balance
+        await tx.cashAccount.update({
+          where: { id: cashAccount.id },
+          data: { currentBalance: balanceAfter },
+        })
+      }
 
       // Process allocations if provided
       if (data.allocations && data.allocations.length > 0) {

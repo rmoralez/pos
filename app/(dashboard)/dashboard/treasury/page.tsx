@@ -173,7 +173,7 @@ export default function TreasuryPage() {
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <AccountSummaryCard
-          title="Efectivo Total"
+          title="Fondos Totales"
           amount={summary?.totalCash ?? 0}
           icon={Wallet}
           iconColor="text-blue-600"
@@ -260,58 +260,68 @@ export default function TreasuryPage() {
             </p>
           ) : (
             <div className="space-y-3">
-              {summary.accountBreakdown.map((account) => (
-                <div
-                  key={account.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex-shrink-0">
-                      {account.type === "CASH_REGISTER" && (
-                        <DollarSign className="h-5 w-5 text-blue-600" />
-                      )}
-                      {account.type === "BANK" && (
-                        <Building2 className="h-5 w-5 text-green-600" />
-                      )}
-                      {account.type === "PETTY_CASH" && (
-                        <Banknote className="h-5 w-5 text-yellow-600" />
-                      )}
-                      {!["CASH_REGISTER", "BANK", "PETTY_CASH"].includes(
-                        account.type
-                      ) && <Wallet className="h-5 w-5 text-gray-600" />}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium truncate">{account.name}</p>
-                        <Badge className={TYPE_COLORS[account.type]}>
-                          {TYPE_LABELS[account.type]}
-                        </Badge>
-                        {account.status === "OPEN" && (
-                          <Badge variant="outline" className="text-green-600 border-green-600">
-                            Abierta
-                          </Badge>
-                        )}
+              {summary.accountBreakdown.map((account) => {
+                // Determine the correct detail page URL based on account type
+                const detailUrl =
+                  account.type === "CASH_REGISTER"
+                    ? `/dashboard/cash/${account.id}`
+                    : account.type === "PETTY_CASH"
+                      ? `/dashboard/petty-cash`
+                      : `/dashboard/cash-accounts/${account.id}`
+
+                return (
+                  <Link key={account.id} href={detailUrl}>
+                    <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors cursor-pointer">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex-shrink-0">
+                          {account.type === "CASH_REGISTER" && (
+                            <DollarSign className="h-5 w-5 text-blue-600" />
+                          )}
+                          {account.type === "BANK" && (
+                            <Building2 className="h-5 w-5 text-green-600" />
+                          )}
+                          {account.type === "PETTY_CASH" && (
+                            <Banknote className="h-5 w-5 text-yellow-600" />
+                          )}
+                          {!["CASH_REGISTER", "BANK", "PETTY_CASH"].includes(
+                            account.type
+                          ) && <Wallet className="h-5 w-5 text-gray-600" />}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium truncate">{account.name}</p>
+                            <Badge className={TYPE_COLORS[account.type]}>
+                              {TYPE_LABELS[account.type]}
+                            </Badge>
+                            {account.status === "OPEN" && (
+                              <Badge variant="outline" className="text-green-600 border-green-600">
+                                Abierta
+                              </Badge>
+                            )}
+                          </div>
+                          {account.description && (
+                            <p className="text-xs text-muted-foreground truncate">
+                              {account.description}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      {account.description && (
-                        <p className="text-xs text-muted-foreground truncate">
-                          {account.description}
+                      <div className="text-right flex-shrink-0 ml-4 flex items-center gap-2">
+                        <p
+                          className={`text-lg font-bold ${
+                            account.currentBalance < 0
+                              ? "text-red-600"
+                              : "text-green-600"
+                          }`}
+                        >
+                          {formatCurrency(account.currentBalance)}
                         </p>
-                      )}
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right flex-shrink-0 ml-4">
-                    <p
-                      className={`text-lg font-bold ${
-                        account.currentBalance < 0
-                          ? "text-red-600"
-                          : "text-green-600"
-                      }`}
-                    >
-                      {formatCurrency(account.currentBalance)}
-                    </p>
-                  </div>
-                </div>
-              ))}
+                  </Link>
+                )
+              })}
             </div>
           )}
         </CardContent>

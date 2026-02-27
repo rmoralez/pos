@@ -29,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Search, DollarSign, AlertCircle, Plus, History } from "lucide-react"
+import { Search, DollarSign, AlertCircle, Plus, History, Trash2 } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { toast } from "sonner"
 
@@ -68,6 +68,37 @@ interface Movement {
   } | null
 }
 
+type PaymentMethod =
+  | "CASH"
+  | "DEBIT_CARD"
+  | "CREDIT_CARD"
+  | "TRANSFER"
+  | "QR"
+  | "CHECK"
+
+interface PaymentEntry {
+  method: PaymentMethod
+  amount: string
+}
+
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  CASH: "Efectivo",
+  DEBIT_CARD: "Tarjeta de Débito",
+  CREDIT_CARD: "Tarjeta de Crédito",
+  QR: "QR (Mercado Pago)",
+  TRANSFER: "Transferencia",
+  CHECK: "Cheque",
+}
+
+const ALL_PAYMENT_METHODS: PaymentMethod[] = [
+  "CASH",
+  "DEBIT_CARD",
+  "CREDIT_CARD",
+  "QR",
+  "TRANSFER",
+  "CHECK",
+]
+
 export default function AccountsPage() {
   const [customers, setCustomers] = useState<CustomerAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -77,7 +108,7 @@ export default function AccountsPage() {
   // Payment dialog
   const [paymentDialog, setPaymentDialog] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerAccount | null>(null)
-  const [paymentAmount, setPaymentAmount] = useState("")
+  const [payments, setPayments] = useState<PaymentEntry[]>([{ method: "CASH", amount: "" }])
   const [paymentConcept, setPaymentConcept] = useState("")
   const [paymentReference, setPaymentReference] = useState("")
   const [paymentLoading, setPaymentLoading] = useState(false)
@@ -124,19 +155,55 @@ export default function AccountsPage() {
 
   const handleOpenPayment = (customer: CustomerAccount) => {
     setSelectedCustomer(customer)
-    setPaymentAmount("")
+    setPayments([{ method: "CASH", amount: "" }])
     setPaymentConcept("")
     setPaymentReference("")
     setPaymentDialog(true)
   }
 
+  const getTotalPayment = () => {
+    return payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+  }
+
+  const updatePaymentMethod = (index: number, method: PaymentMethod) => {
+    const updated = [...payments]
+    updated[index].method = method
+    setPayments(updated)
+  }
+
+  const updatePaymentAmount = (index: number, amount: string) => {
+    const updated = [...payments]
+    updated[index].amount = amount
+    setPayments(updated)
+  }
+
+  const addPaymentMethod = () => {
+    setPayments([...payments, { method: "CASH", amount: "" }])
+  }
+
+  const removePaymentMethod = (index: number) => {
+    if (payments.length > 1) {
+      setPayments(payments.filter((_, i) => i !== index))
+    }
+  }
+
   const handleRegisterPayment = async () => {
     if (!selectedCustomer) return
 
-    const amount = parseFloat(paymentAmount)
-    if (isNaN(amount) || amount <= 0) {
-      toast.error("Monto inválido")
+    // Validate payments
+    const totalAmount = getTotalPayment()
+    if (totalAmount <= 0) {
+      toast.error("Debe ingresar al menos un monto de pago")
       return
+    }
+
+    // Check all payments have amounts
+    for (const payment of payments) {
+      const amount = parseFloat(payment.amount)
+      if (isNaN(amount) || amount <= 0) {
+        toast.error("Todos los métodos de pago deben tener un monto válido")
+        return
+      }
     }
 
     if (!paymentConcept.trim()) {
@@ -150,9 +217,13 @@ export default function AccountsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount,
+          amount: totalAmount,
           concept: paymentConcept,
           reference: paymentReference || undefined,
+          payments: payments.map(p => ({
+            method: p.method,
+            amount: parseFloat(p.amount),
+          })),
         }),
       })
 
@@ -350,23 +421,76 @@ export default function AccountsPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="amount">Monto *</Label>
-                <Input
-                  id="amount"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                />
+              {/* Payment Methods Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label>Métodos de Pago</Label>
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm font-medium">
+                      Total: {formatCurrency(getTotalPayment())}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addPaymentMethod}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Agregar
+                    </Button>
+                  </div>
+                </div>
+
+                {payments.map((payment, index) => (
+                  <div key={index} className="flex gap-2 items-start">
+                    <div className="flex-1">
+                      <Select
+                        value={payment.method}
+                        onValueChange={(value) =>
+                          updatePaymentMethod(index, value as PaymentMethod)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ALL_PAYMENT_METHODS.map((method) => (
+                            <SelectItem key={method} value={method}>
+                              {PAYMENT_METHOD_LABELS[method]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="w-40">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        placeholder="Monto"
+                        value={payment.amount}
+                        onChange={(e) => updatePaymentAmount(index, e.target.value)}
+                      />
+                    </div>
+                    {payments.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removePaymentMethod(index)}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-600" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="concept">Concepto *</Label>
                 <Input
                   id="concept"
-                  placeholder="Ej: Pago en efectivo"
+                  placeholder="Ej: Pago de cliente"
                   value={paymentConcept}
                   onChange={(e) => setPaymentConcept(e.target.value)}
                 />
