@@ -18,23 +18,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const searchParams = request.nextUrl.searchParams
-    const locationId = searchParams.get("locationId") || user.locationId
-
-    // Build where clause
-    const where: any = {
-      tenantId: user.tenantId,
-      status: "OPEN",
-    }
-
-    // Add locationId if available
-    if (locationId) {
-      where.locationId = locationId
-    }
-
-    // Find open cash register
+    // Find the current user's open cash register
+    // Each user has their own independent cash register
     const cashRegister = await prisma.cashRegister.findFirst({
-      where,
+      where: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        status: "OPEN",
+      },
       include: {
         user: {
           select: {

@@ -86,10 +86,10 @@ export async function GET() {
 
         return {
           id: register.id,
-          name: `Caja ${register.location.name}`,
+          name: `Caja de ${register.user.name || "Sin nombre"}`,
           type: "CASH_REGISTER" as const,
           currentBalance,
-          description: `Usuario: ${register.user.name || "Sin nombre"}`,
+          description: `Ubicación: ${register.location.name}`,
           openedAt: register.openedAt,
         }
       })

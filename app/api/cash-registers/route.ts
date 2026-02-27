@@ -151,18 +151,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check if there's already an open cash register for this location
+    // Check if this user already has an open cash register
     const existingOpen = await prisma.cashRegister.findFirst({
       where: {
         tenantId: user.tenantId,
-        locationId,
+        userId: user.id,
         status: "OPEN",
       },
     })
 
     if (existingOpen) {
       return NextResponse.json(
-        { error: "There is already an open cash register for this location" },
+        { error: "You already have an open cash register" },
         { status: 400 }
       )
     }
@@ -212,15 +212,7 @@ export async function POST(request: NextRequest) {
           throw new Error("No se encontró la cuenta de efectivo en tesorería")
         }
 
-        // Check if there's enough balance
-        const currentBalance = Number(mainCashAccount.currentBalance)
-        if (currentBalance < data.openingBalance) {
-          throw new Error(
-            `Saldo insuficiente en cuenta de efectivo. Disponible: $${currentBalance}, Requerido: $${data.openingBalance}`
-          )
-        }
-
-        // Calculate new balance
+        // Calculate new balance (allow negative balances)
         const balanceBefore = mainCashAccount.currentBalance
         const balanceAfter = Number(balanceBefore) - data.openingBalance
 

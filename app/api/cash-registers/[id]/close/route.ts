@@ -33,11 +33,12 @@ export async function POST(
     const body = await request.json()
     const data = closeCashRegisterSchema.parse(body)
 
-    // Get cash register
+    // Get cash register (must be the user's own cash register)
     const cashRegister = await prisma.cashRegister.findFirst({
       where: {
         id: params.id,
         tenantId: user.tenantId,
+        userId: user.id, // User can only close their own cash register
       },
       include: {
         sales: {
@@ -60,7 +61,7 @@ export async function POST(
 
     if (!cashRegister) {
       return NextResponse.json(
-        { error: "Cash register not found" },
+        { error: "Cash register not found or does not belong to you" },
         { status: 404 }
       )
     }
